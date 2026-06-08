@@ -50,7 +50,7 @@ export class SynologyClient {
     this.sid = sid;
   }
 
-  async listFiles(folderPath: string, offset = 0, limit = 50, filetype = "all"): Promise<SynologyListResponse> {
+  async listFiles(folderPath: string, offset = 0, limit = 5000, filetype = "all"): Promise<SynologyListResponse> {
     const url = this.buildUrl("SYNO.FileStation.List", "list", 2, {
       folder_path: folderPath,
       offset: String(offset),
@@ -121,6 +121,38 @@ export class SynologyClient {
       path,
       mode: "open",
     });
+  }
+
+  async uploadFile(folderPath: string, fileName: string, content: string): Promise<boolean> {
+    const uploadUrl = `${this.baseUrl}/webapi/entry.cgi`;
+    const formData = new FormData();
+    formData.append("api", "SYNO.FileStation.Upload");
+    formData.append("method", "upload");
+    formData.append("version", "2");
+    formData.append("path", folderPath);
+    formData.append("create_parents", "true");
+    formData.append("overwrite", "true");
+    if (this.sid) {
+      formData.append("_sid", this.sid);
+    }
+
+    const blob = new Blob([content], { type: "application/json" });
+    formData.append("file", blob, fileName);
+
+    const res = await fetch(uploadUrl, { method: "POST", body: formData });
+    const data = await res.json();
+    return data.success === true;
+  }
+
+  async downloadFile(path: string): Promise<string | null> {
+    const url = this.getDownloadUrl(path);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return res.text();
+    } catch {
+      return null;
+    }
   }
 }
 

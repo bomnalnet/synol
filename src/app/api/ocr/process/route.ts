@@ -91,6 +91,22 @@ async function processInBackground(
 
   if (!status.cancelled) {
     status.done = files.length;
+    status.current = "NAS에 동기화 중...";
+
+    try {
+      const syncRes = await fetch(`${origin}/api/ocr/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nasUrl, sid, action: "upload" }),
+      });
+      const syncData = await syncRes.json();
+      if (syncData.success) {
+        console.log(`[OCR] Synced ${syncData.count} entries to NAS`);
+      }
+    } catch (err) {
+      console.error("[OCR] NAS sync failed:", err);
+    }
+
     status.current = "완료";
   }
 

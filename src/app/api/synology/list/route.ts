@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const sid = searchParams.get("sid");
   const folderPath = searchParams.get("path") || "/photo";
   const offset = parseInt(searchParams.get("offset") || "0");
-  const limit = parseInt(searchParams.get("limit") || "200");
+  const limit = parseInt(searchParams.get("limit") || "5000");
 
   if (!nasUrl || !sid) {
     return NextResponse.json(
