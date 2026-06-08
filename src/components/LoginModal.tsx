@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 
-const NAS_URL = "http://192.168.0.100:5000";
+const NAS_URL = "http://192.168.0.8:3172";
 const DEFAULT_ACCOUNT = "구태식";
 const DEFAULT_PASSWORD = "Bomnal2040";
 
