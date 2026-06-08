@@ -24,10 +24,6 @@ interface FolderItem {
   isFolder: true;
 }
 
-interface ImageAssetWithOcr extends ImageAsset {
-  ocrText?: string;
-}
-
 export default function ImageBrowser() {
   const {
     connection,
@@ -48,7 +44,31 @@ export default function ImageBrowser() {
   const [ocrProgress, setOcrProgress] = useState({ total: 0, done: 0, current: "" });
   const [ocrMode, setOcrMode] = useState(false);
   const [hoveredOcr, setHoveredOcr] = useState<string | null>(null);
+  const [ocrStatusMap, setOcrStatusMap] = useState<Record<string, string>>({});
+  const [unprocessedCount, setUnprocessedCount] = useState(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+
+  const checkOcrStatus = useCallback(async (assets: ImageAsset[]) => {
+    if (assets.length === 0) return;
+    try {
+      const res = await fetch("/api/ocr/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filePaths: assets.map((a) => a.path) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const map: Record<string, string> = {};
+        for (const item of data.processed) {
+          map[item.path] = item.ocrText;
+        }
+        setOcrStatusMap(map);
+        setUnprocessedCount(data.unprocessedCount);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const loadContents = useCallback(async (path: string) => {
     if (!connection) return;
@@ -65,6 +85,7 @@ export default function ImageBrowser() {
       if (data.success) {
         setFolders(data.folders || []);
         setImages(data.assets || []);
+        checkOcrStatus(data.assets || []);
       } else {
         setError(data.error || "파일 목록을 불러올 수 없습니다.");
       }
@@ -73,7 +94,7 @@ export default function ImageBrowser() {
     } finally {
       setLoading(false);
     }
-  }, [connection, setImages]);
+  }, [connection, setImages, checkOcrStatus]);
 
   useEffect(() => {
     loadContents(folderPath);
@@ -100,6 +121,11 @@ export default function ImageBrowser() {
         if (data.success) {
           setFolders([]);
           setImages(data.assets);
+          const map: Record<string, string> = {};
+          for (const a of data.assets) {
+            if (a.ocrText) map[a.path] = a.ocrText;
+          }
+          setOcrStatusMap(map);
         }
       } else {
         const params = new URLSearchParams({
@@ -113,6 +139,7 @@ export default function ImageBrowser() {
         if (data.success) {
           setFolders([]);
           setImages(data.assets);
+          checkOcrStatus(data.assets);
         }
       }
     } catch {
@@ -156,12 +183,11 @@ export default function ImageBrowser() {
               current: statusData.current || "",
             });
 
-            if (statusData.finished || statusData.done) {
-              if (statusData.finished) {
-                if (pollRef.current) clearInterval(pollRef.current);
-                pollRef.current = null;
-                setOcrJobId(null);
-              }
+            if (statusData.finished) {
+              if (pollRef.current) clearInterval(pollRef.current);
+              pollRef.current = null;
+              setOcrJobId(null);
+              checkOcrStatus(images);
             }
           }
         }, 2000);
@@ -189,6 +215,7 @@ export default function ImageBrowser() {
 
   const navigateTo = (path: string) => {
     setFolderPath(path);
+    setOcrStatusMap({});
   };
 
   const goUp = () => {
@@ -202,6 +229,7 @@ export default function ImageBrowser() {
     selectedImages.some((i) => i.id === image.id);
 
   const breadcrumbs = folderPath.split("/").filter(Boolean);
+  const processedCount = Object.keys(ocrStatusMap).length;
 
   return (
     <div className="flex flex-col h-full">
@@ -247,14 +275,20 @@ export default function ImageBrowser() {
           </button>
           <button
             onClick={startOcrProcessing}
-            disabled={!!ocrJobId || images.length === 0}
+            disabled={!!ocrJobId || images.length === 0 || unprocessedCount === 0}
             className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
-            title="현재 폴더의 이미지에서 텍스트 추출"
+            title="현재 폴더의 미처리 이미지에서 텍스트 추출"
           >
             <ScanText className="w-3 h-3" />
-            OCR 실행
+            {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 완료"}
           </button>
         </div>
+
+        {processedCount > 0 && !ocrJobId && (
+          <div className="text-[10px] text-amber-600">
+            OCR 처리됨: {processedCount}/{images.length}
+          </div>
+        )}
 
         {(ocrJobId || ocrProgress.current) && (
           <div className="bg-amber-50 rounded-lg px-3 py-2 space-y-1">
@@ -350,12 +384,13 @@ export default function ImageBrowser() {
             {images.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
                 {images.map((image) => {
-                  const imgWithOcr = image as ImageAssetWithOcr;
+                  const ocrText = ocrStatusMap[image.path];
+                  const isOcrDone = ocrText !== undefined;
                   return (
                     <div key={image.id} className="relative">
                       <button
                         onClick={() => toggleImageSelection(image)}
-                        onMouseEnter={() => imgWithOcr.ocrText ? setHoveredOcr(image.id) : null}
+                        onMouseEnter={() => ocrText ? setHoveredOcr(image.id) : null}
                         onMouseLeave={() => setHoveredOcr(null)}
                         className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all w-full ${
                           isSelected(image)
@@ -375,8 +410,8 @@ export default function ImageBrowser() {
                             <Check className="w-4 h-4 text-white" />
                           </div>
                         )}
-                        {imgWithOcr.ocrText && (
-                          <div className="absolute top-2 left-2 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                        {isOcrDone && (
+                          <div className={`absolute top-2 left-2 w-5 h-5 rounded-full flex items-center justify-center ${ocrText ? "bg-amber-500" : "bg-gray-400"}`}>
                             <FileText className="w-3 h-3 text-white" />
                           </div>
                         )}
@@ -384,10 +419,10 @@ export default function ImageBrowser() {
                           <p className="text-white text-xs truncate">{image.name}</p>
                         </div>
                       </button>
-                      {hoveredOcr === image.id && imgWithOcr.ocrText && (
+                      {hoveredOcr === image.id && ocrText && (
                         <div className="absolute z-10 left-0 right-0 -bottom-1 translate-y-full bg-gray-900 text-white text-xs p-2 rounded-lg shadow-lg max-h-24 overflow-y-auto">
                           <p className="text-amber-400 text-[10px] font-medium mb-0.5">추출된 텍스트:</p>
-                          <p className="whitespace-pre-wrap leading-relaxed">{imgWithOcr.ocrText}</p>
+                          <p className="whitespace-pre-wrap leading-relaxed">{ocrText}</p>
                         </div>
                       )}
                     </div>
