@@ -12,7 +12,7 @@ export async function extractText(imageBuffer: ArrayBuffer): Promise<string> {
   }
 
   const message = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     max_tokens: 1024,
     messages: [
       {
