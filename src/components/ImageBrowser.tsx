@@ -135,6 +135,7 @@ export default function ImageBrowser() {
           nasUrl: connection.url,
           sid: connection.sid,
           files,
+          baseUrl: window.location.origin,
         }),
       });
 
