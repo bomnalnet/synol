@@ -1,45 +1,40 @@
-import { createWorker, Worker } from "tesseract.js";
+import Anthropic from "@anthropic-ai/sdk";
 
-let worker: Worker | null = null;
-let initializing = false;
+const anthropic = new Anthropic();
 
-async function getWorker(): Promise<Worker> {
-  if (worker) return worker;
-  if (initializing) {
-    while (initializing) {
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (worker) return worker;
+export async function extractText(imageBuffer: ArrayBuffer): Promise<string> {
+  const base64 = Buffer.from(imageBuffer).toString("base64");
+
+  const sizeKB = imageBuffer.byteLength / 1024;
+  if (sizeKB > 20000) {
+    console.log(`[OCR] Image too large (${Math.round(sizeKB)}KB), skipping`);
+    return "";
   }
 
-  initializing = true;
-  try {
-    console.log("[OCR] Tesseract worker 초기화 중 (한국어+영어)...");
-    worker = await createWorker("kor+eng");
-    console.log("[OCR] Tesseract worker 준비 완료");
-    return worker;
-  } finally {
-    initializing = false;
-  }
-}
+  const message = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: base64,
+            },
+          },
+          {
+            type: "text",
+            text: "이 이미지에 포함된 모든 텍스트를 추출해주세요. 텍스트만 출력하고, 설명은 하지 마세요. 텍스트가 없으면 빈 문자열만 출력하세요.",
+          },
+        ],
+      },
+    ],
+  });
 
-export async function extractText(imageBuffer: ArrayBuffer, timeoutMs = 30000): Promise<string> {
-  const w = await getWorker();
-  const buffer = Buffer.from(imageBuffer);
-
-  const result = await Promise.race([
-    w.recognize(buffer),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("OCR timeout")), timeoutMs)
-    ),
-  ]);
-
-  return result.data.text.trim();
-}
-
-export async function terminateWorker(): Promise<void> {
-  if (worker) {
-    await worker.terminate();
-    worker = null;
-  }
+  const text = message.content[0].type === "text" ? message.content[0].text.trim() : "";
+  return text;
 }
