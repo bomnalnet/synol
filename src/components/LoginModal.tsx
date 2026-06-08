@@ -5,11 +5,13 @@ import { useDesignStore } from "@/store/useDesignStore";
 import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 
 const NAS_URL = "http://1.233.121.179:5000";
+const DEFAULT_ACCOUNT = "구태식";
+const DEFAULT_PASSWORD = "Bomnal2040";
 
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
-  const [account, setAccount] = useState("");
-  const [password, setPassword] = useState("");
+  const [account, setAccount] = useState(DEFAULT_ACCOUNT);
+  const [password, setPassword] = useState(DEFAULT_PASSWORD);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
