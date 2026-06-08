@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 
-const NAS_URL = "https://bom-nal.synology.me";
+const NAS_URL = "http://1.233.121.179:5000";
 
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
