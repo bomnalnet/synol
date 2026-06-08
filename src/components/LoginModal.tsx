@@ -7,6 +7,7 @@ import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 const NAS_URL = "https://bom-nal.synology.me";
 const DEFAULT_ACCOUNT = "구태식";
 const DEFAULT_PASSWORD = "Bomnal2040";
+const ADMIN_ACCOUNTS = ["구태식"];
 
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
@@ -31,7 +32,8 @@ export default function LoginModal() {
       const data = await res.json();
 
       if (data.success) {
-        setConnection({ url: data.url, sid: data.sid, currentPath: "/" });
+        setConnection({ url: data.url, sid: data.sid, currentPath: "/", account });
+        useDesignStore.setState({ isAdmin: ADMIN_ACCOUNTS.includes(account) });
 
         fetch("/api/ocr/sync", {
           method: "POST",

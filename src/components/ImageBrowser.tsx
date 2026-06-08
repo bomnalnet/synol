@@ -31,6 +31,7 @@ export default function ImageBrowser() {
     setImages,
     selectedImages,
     toggleImageSelection,
+    isAdmin,
   } = useDesignStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -273,24 +274,26 @@ export default function ImageBrowser() {
             <ScanText className="w-3 h-3" />
             텍스트(OCR)
           </button>
-          <button
-            onClick={startOcrProcessing}
-            disabled={!!ocrJobId || images.length === 0 || unprocessedCount === 0}
-            className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
-            title="현재 폴더의 미처리 이미지에서 텍스트 추출"
-          >
-            <ScanText className="w-3 h-3" />
-            {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 완료"}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={startOcrProcessing}
+              disabled={!!ocrJobId || images.length === 0 || unprocessedCount === 0}
+              className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
+              title="현재 폴더의 미처리 이미지에서 텍스트 추출"
+            >
+              <ScanText className="w-3 h-3" />
+              {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 완료"}
+            </button>
+          )}
         </div>
 
-        {processedCount > 0 && !ocrJobId && (
+        {isAdmin && processedCount > 0 && !ocrJobId && (
           <div className="text-[10px] text-amber-600">
             OCR 처리됨: {processedCount}/{images.length}
           </div>
         )}
 
-        {(ocrJobId || ocrProgress.current) && (
+        {isAdmin && (ocrJobId || ocrProgress.current) && (
           <div className="bg-amber-50 rounded-lg px-3 py-2 space-y-1">
             <div className="flex items-center justify-between text-xs text-amber-700">
               <span>OCR 처리 중... {ocrProgress.done}/{ocrProgress.total}</span>

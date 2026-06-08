@@ -5,6 +5,7 @@ interface SynologyConnection {
   url: string;
   sid: string;
   currentPath: string;
+  account: string;
 }
 
 interface DesignState {
@@ -30,6 +31,8 @@ interface DesignState {
   selectedElementId: string | null;
   setSelectedElementId: (id: string | null) => void;
 
+  isAdmin: boolean;
+
   isGenerating: boolean;
   setIsGenerating: (v: boolean) => void;
 
@@ -39,7 +42,8 @@ interface DesignState {
 
 export const useDesignStore = create<DesignState>((set) => ({
   connection: null,
-  setConnection: (conn) => set({ connection: conn }),
+  setConnection: (conn) => set({ connection: conn, isAdmin: false }),
+  isAdmin: false,
   setCurrentPath: (path) =>
     set((state) => ({
       connection: state.connection ? { ...state.connection, currentPath: path } : null,
