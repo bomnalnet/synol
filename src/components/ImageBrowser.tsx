@@ -5,13 +5,22 @@ import { useDesignStore } from "@/store/useDesignStore";
 import {
   Search,
   FolderOpen,
+  Folder,
   ChevronRight,
+  ChevronLeft,
   Check,
   Loader2,
   ImageIcon,
   RefreshCw,
 } from "lucide-react";
 import type { ImageAsset } from "@/types";
+
+interface FolderItem {
+  id: string;
+  path: string;
+  name: string;
+  isFolder: true;
+}
 
 export default function ImageBrowser() {
   const {
@@ -26,11 +35,13 @@ export default function ImageBrowser() {
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [folderPath, setFolderPath] = useState("/");
-  const [pathHistory, setPathHistory] = useState<string[]>(["/"]);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [error, setError] = useState("");
 
-  const loadImages = useCallback(async (path: string) => {
+  const loadContents = useCallback(async (path: string) => {
     if (!connection) return;
     setLoading(true);
+    setError("");
     try {
       const params = new URLSearchParams({
         url: connection.url,
@@ -40,18 +51,21 @@ export default function ImageBrowser() {
       const res = await fetch(`/api/synology/list?${params}`);
       const data = await res.json();
       if (data.success) {
-        setImages(data.assets);
+        setFolders(data.folders || []);
+        setImages(data.assets || []);
+      } else {
+        setError(data.error || "파일 목록을 불러올 수 없습니다.");
       }
     } catch {
-      // silently fail
+      setError("서버 연결 오류");
     } finally {
       setLoading(false);
     }
   }, [connection, setImages]);
 
   useEffect(() => {
-    loadImages(folderPath);
-  }, [folderPath, loadImages]);
+    loadContents(folderPath);
+  }, [folderPath, loadContents]);
 
   const handleSearch = async () => {
     if (!connection || !searchQuery.trim()) return;
@@ -66,6 +80,7 @@ export default function ImageBrowser() {
       const res = await fetch(`/api/synology/search?${params}`);
       const data = await res.json();
       if (data.success) {
+        setFolders([]);
         setImages(data.assets);
       }
     } catch {
@@ -77,7 +92,13 @@ export default function ImageBrowser() {
 
   const navigateTo = (path: string) => {
     setFolderPath(path);
-    setPathHistory((prev) => [...prev, path]);
+  };
+
+  const goUp = () => {
+    if (folderPath === "/") return;
+    const parts = folderPath.split("/").filter(Boolean);
+    parts.pop();
+    navigateTo(parts.length === 0 ? "/" : "/" + parts.join("/"));
   };
 
   const isSelected = (image: ImageAsset) =>
@@ -110,6 +131,14 @@ export default function ImageBrowser() {
         </div>
 
         <div className="flex items-center gap-1 text-xs text-gray-500 overflow-x-auto">
+          {folderPath !== "/" && (
+            <button
+              onClick={goUp}
+              className="hover:text-purple-600 shrink-0 p-0.5"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={() => navigateTo("/")}
             className="hover:text-purple-600 shrink-0"
@@ -130,7 +159,7 @@ export default function ImageBrowser() {
             </span>
           ))}
           <button
-            onClick={() => loadImages(folderPath)}
+            onClick={() => loadContents(folderPath)}
             className="ml-auto shrink-0 hover:text-purple-600"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -149,41 +178,70 @@ export default function ImageBrowser() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
           </div>
-        ) : images.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-            <ImageIcon className="w-12 h-12 mb-2" />
-            <p className="text-sm">이미지가 없습니다</p>
-            <p className="text-xs mt-1">다른 폴더를 탐색해보세요</p>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-red-500">{error}</p>
+            <button
+              onClick={() => loadContents(folderPath)}
+              className="mt-2 text-xs text-purple-600 hover:underline"
+            >
+              다시 시도
+            </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {images.map((image) => (
-              <button
-                key={image.id}
-                onClick={() => toggleImageSelection(image)}
-                className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                  isSelected(image)
-                    ? "border-purple-600 ring-2 ring-purple-200"
-                    : "border-transparent hover:border-gray-300"
-                }`}
-              >
-                <img
-                  src={image.thumbnailUrl}
-                  alt={image.name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                {isSelected(image) && (
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
-                    <Check className="w-4 h-4 text-white" />
-                  </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                  <p className="text-white text-xs truncate">{image.name}</p>
-                </div>
-              </button>
-            ))}
+          <div className="space-y-3">
+            {folders.length > 0 && (
+              <div className="space-y-1">
+                {folders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    onClick={() => navigateTo(folder.path)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-purple-50 text-left transition-colors"
+                  >
+                    <Folder className="w-5 h-5 text-yellow-500 shrink-0" />
+                    <span className="text-sm text-gray-700 truncate">{folder.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {images.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {images.map((image) => (
+                  <button
+                    key={image.id}
+                    onClick={() => toggleImageSelection(image)}
+                    className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                      isSelected(image)
+                        ? "border-purple-600 ring-2 ring-purple-200"
+                        : "border-transparent hover:border-gray-300"
+                    }`}
+                  >
+                    <img
+                      src={image.thumbnailUrl}
+                      alt={image.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                    {isSelected(image) && (
+                      <div className="absolute top-2 right-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
+                        <Check className="w-4 h-4 text-white" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                      <p className="text-white text-xs truncate">{image.name}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : folders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                <ImageIcon className="w-12 h-12 mb-2" />
+                <p className="text-sm">이미지가 없습니다</p>
+                <p className="text-xs mt-1">다른 폴더를 탐색해보세요</p>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

@@ -50,15 +50,24 @@ export class SynologyClient {
     this.sid = sid;
   }
 
-  async listFiles(folderPath: string, offset = 0, limit = 50): Promise<SynologyListResponse> {
+  async listFiles(folderPath: string, offset = 0, limit = 50, filetype = "all"): Promise<SynologyListResponse> {
     const url = this.buildUrl("SYNO.FileStation.List", "list", 2, {
       folder_path: folderPath,
       offset: String(offset),
       limit: String(limit),
       sort_by: "mtime",
       sort_direction: "desc",
-      filetype: "file",
+      filetype,
       additional: '["size","time","thumbnail"]',
+    });
+
+    const res = await fetch(url);
+    return res.json();
+  }
+
+  async listShares(): Promise<SynologyListResponse> {
+    const url = this.buildUrl("SYNO.FileStation.List", "list_share", 2, {
+      additional: '["size","time"]',
     });
 
     const res = await fetch(url);

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 
+const NAS_URL = "https://bom-nal.synology.me";
+
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
-  const [url, setUrl] = useState("");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
-  const [otpCode, setOtpCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +23,7 @@ export default function LoginModal() {
       const res = await fetch("/api/synology/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, account, password, otpCode: otpCode || undefined }),
+        body: JSON.stringify({ url: NAS_URL, account, password }),
       });
 
       const data = await res.json();
@@ -52,16 +52,9 @@ export default function LoginModal() {
         </div>
 
         <form onSubmit={handleLogin} className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-purple-200 mb-1">NAS 주소</label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://your-nas.synology.me:5001"
-              className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              required
-            />
+          <div className="bg-white/5 rounded-lg px-4 py-3 text-sm text-purple-200">
+            <span className="text-purple-400 text-xs">NAS 서버</span>
+            <p className="font-mono mt-0.5">{NAS_URL}</p>
           </div>
 
           <div>
@@ -97,17 +90,6 @@ export default function LoginModal() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-purple-200 mb-1">OTP 코드 (선택)</label>
-            <input
-              type="text"
-              value={otpCode}
-              onChange={(e) => setOtpCode(e.target.value)}
-              placeholder="2단계 인증 코드"
-              className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
           {error && (
             <div className="bg-red-500/20 text-red-200 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -129,10 +111,6 @@ export default function LoginModal() {
             )}
           </button>
         </form>
-
-        <p className="text-center text-purple-300/50 text-sm mt-4">
-          시놀로지 NAS에 FileStation API가 활성화되어 있어야 합니다
-        </p>
       </div>
     </div>
   );
