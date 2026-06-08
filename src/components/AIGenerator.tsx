@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import { Sparkles, Loader2, Lightbulb } from "lucide-react";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 const STYLE_OPTIONS = [
   { value: "modern", label: "모던" },
   { value: "minimal", label: "미니멀" },
@@ -41,7 +43,7 @@ export default function AIGenerator() {
     setSuggestions([]);
 
     try {
-      const res = await fetch("/api/design/generate", {
+      const res = await fetch(`${BASE}/api/design/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

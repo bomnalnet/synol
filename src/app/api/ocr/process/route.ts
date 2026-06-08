@@ -94,7 +94,8 @@ async function processInBackground(
     status.current = "NAS에 동기화 중...";
 
     try {
-      const syncRes = await fetch(`${origin}/api/ocr/sync`, {
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+      const syncRes = await fetch(`${origin}${basePath}/api/ocr/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nasUrl, sid, action: "upload" }),

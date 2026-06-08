@@ -8,6 +8,7 @@ const NAS_URL = "https://bom-nal.synology.me";
 const DEFAULT_ACCOUNT = "구태식";
 const DEFAULT_PASSWORD = "Bomnal2040";
 const ADMIN_ACCOUNTS = ["구태식"];
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
@@ -23,7 +24,7 @@ export default function LoginModal() {
     setError("");
 
     try {
-      const res = await fetch("/api/synology/auth", {
+      const res = await fetch(`${BASE}/api/synology/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: NAS_URL, account, password }),
@@ -35,7 +36,7 @@ export default function LoginModal() {
         setConnection({ url: data.url, sid: data.sid, currentPath: "/", account });
         useDesignStore.setState({ isAdmin: ADMIN_ACCOUNTS.includes(account) });
 
-        fetch("/api/ocr/sync", {
+        fetch(`${BASE}/api/ocr/sync`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ nasUrl: data.url, sid: data.sid, action: "download" }),

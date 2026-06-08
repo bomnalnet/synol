@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import type { ImageAsset } from "@/types";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 interface FolderItem {
   id: string;
   path: string;
@@ -52,7 +54,7 @@ export default function ImageBrowser() {
   const checkOcrStatus = useCallback(async (assets: ImageAsset[]) => {
     if (assets.length === 0) return;
     try {
-      const res = await fetch("/api/ocr/status", {
+      const res = await fetch(`${BASE}/api/ocr/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filePaths: assets.map((a) => a.path) }),
@@ -81,7 +83,7 @@ export default function ImageBrowser() {
         sid: connection.sid,
         path,
       });
-      const res = await fetch(`/api/synology/list?${params}`);
+      const res = await fetch(`${BASE}/api/synology/list?${params}`);
       const data = await res.json();
       if (data.success) {
         setFolders(data.folders || []);
@@ -117,7 +119,7 @@ export default function ImageBrowser() {
           sid: connection.sid,
           q: searchQuery,
         });
-        const res = await fetch(`/api/ocr/search?${params}`);
+        const res = await fetch(`${BASE}/api/ocr/search?${params}`);
         const data = await res.json();
         if (data.success) {
           setFolders([]);
@@ -135,7 +137,7 @@ export default function ImageBrowser() {
           path: folderPath,
           q: searchQuery,
         });
-        const res = await fetch(`/api/synology/search?${params}`);
+        const res = await fetch(`${BASE}/api/synology/search?${params}`);
         const data = await res.json();
         if (data.success) {
           setFolders([]);
@@ -156,7 +158,7 @@ export default function ImageBrowser() {
     const files = images.map((img) => ({ path: img.path, name: img.name }));
 
     try {
-      const res = await fetch("/api/ocr/process", {
+      const res = await fetch(`${BASE}/api/ocr/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -174,7 +176,7 @@ export default function ImageBrowser() {
         setOcrProgress({ total: data.total, done: 0, current: "시작 중..." });
 
         pollRef.current = setInterval(async () => {
-          const statusRes = await fetch(`/api/ocr/process?jobId=${data.jobId}`);
+          const statusRes = await fetch(`${BASE}/api/ocr/process?jobId=${data.jobId}`);
           const statusData = await statusRes.json();
 
           if (statusData.success) {
@@ -204,7 +206,7 @@ export default function ImageBrowser() {
   const cancelOcr = async () => {
     if (!ocrJobId) return;
     try {
-      await fetch(`/api/ocr/process?jobId=${ocrJobId}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/ocr/process?jobId=${ocrJobId}`, { method: "DELETE" });
     } catch {
       // ignore
     }

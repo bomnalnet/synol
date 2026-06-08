@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { PenLine, Loader2, Copy, Check } from "lucide-react";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 interface CopyItem {
   headline: string;
   subheadline: string;
@@ -49,7 +51,7 @@ export default function CopyWriter() {
     setTips([]);
 
     try {
-      const res = await fetch("/api/copy/suggest", {
+      const res = await fetch(`${BASE}/api/copy/suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ purpose, tone, keywords, platform, existingCopy }),
