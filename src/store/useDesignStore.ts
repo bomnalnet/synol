@@ -33,8 +33,8 @@ interface DesignState {
   isGenerating: boolean;
   setIsGenerating: (v: boolean) => void;
 
-  sidebarTab: "images" | "templates" | "ai" | "elements";
-  setSidebarTab: (tab: "images" | "templates" | "ai" | "elements") => void;
+  sidebarTab: "images" | "templates" | "ai" | "copy" | "elements";
+  setSidebarTab: (tab: "images" | "templates" | "ai" | "copy" | "elements") => void;
 }
 
 export const useDesignStore = create<DesignState>((set) => ({

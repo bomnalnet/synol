@@ -5,12 +5,14 @@ import ImageBrowser from "./ImageBrowser";
 import TemplateGallery from "./TemplateGallery";
 import AIGenerator from "./AIGenerator";
 import ElementsPanel from "./ElementsPanel";
-import { ImageIcon, LayoutTemplate, Sparkles, Layers, LogOut } from "lucide-react";
+import CopyWriter from "./CopyWriter";
+import { ImageIcon, LayoutTemplate, Sparkles, Layers, PenLine, LogOut } from "lucide-react";
 
 const TABS = [
   { id: "images" as const, label: "이미지", icon: ImageIcon },
   { id: "templates" as const, label: "템플릿", icon: LayoutTemplate },
   { id: "ai" as const, label: "AI 생성", icon: Sparkles },
+  { id: "copy" as const, label: "카피", icon: PenLine },
   { id: "elements" as const, label: "요소", icon: Layers },
 ];
 
@@ -40,6 +42,7 @@ export default function Sidebar() {
         {sidebarTab === "images" && <ImageBrowser />}
         {sidebarTab === "templates" && <TemplateGallery />}
         {sidebarTab === "ai" && <AIGenerator />}
+        {sidebarTab === "copy" && <CopyWriter />}
         {sidebarTab === "elements" && <ElementsPanel />}
       </div>
 
