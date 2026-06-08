@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const nasUrl = searchParams.get("url");
   const sid = searchParams.get("sid");
-  const folderPath = searchParams.get("path") || "/";
+  const folderPath = searchParams.get("path") || "/photo";
   const query = searchParams.get("q") || "";
 
   if (!nasUrl || !sid || !query) {

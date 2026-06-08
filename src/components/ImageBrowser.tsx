@@ -34,7 +34,7 @@ export default function ImageBrowser() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [folderPath, setFolderPath] = useState("/");
+  const [folderPath, setFolderPath] = useState("/photo");
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [error, setError] = useState("");
 
