@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import {
   Search,
@@ -12,6 +12,8 @@ import {
   Loader2,
   ImageIcon,
   RefreshCw,
+  ScanText,
+  FileText,
 } from "lucide-react";
 import type { ImageAsset } from "@/types";
 
@@ -20,6 +22,10 @@ interface FolderItem {
   path: string;
   name: string;
   isFolder: true;
+}
+
+interface ImageAssetWithOcr extends ImageAsset {
+  ocrText?: string;
 }
 
 export default function ImageBrowser() {
@@ -37,6 +43,12 @@ export default function ImageBrowser() {
   const [folderPath, setFolderPath] = useState("/photo");
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [error, setError] = useState("");
+
+  const [ocrJobId, setOcrJobId] = useState<string | null>(null);
+  const [ocrProgress, setOcrProgress] = useState({ total: 0, done: 0, current: "" });
+  const [ocrMode, setOcrMode] = useState(false);
+  const [hoveredOcr, setHoveredOcr] = useState<string | null>(null);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadContents = useCallback(async (path: string) => {
     if (!connection) return;
@@ -67,21 +79,41 @@ export default function ImageBrowser() {
     loadContents(folderPath);
   }, [folderPath, loadContents]);
 
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const handleSearch = async () => {
     if (!connection || !searchQuery.trim()) return;
     setSearching(true);
     try {
-      const params = new URLSearchParams({
-        url: connection.url,
-        sid: connection.sid,
-        path: folderPath,
-        q: searchQuery,
-      });
-      const res = await fetch(`/api/synology/search?${params}`);
-      const data = await res.json();
-      if (data.success) {
-        setFolders([]);
-        setImages(data.assets);
+      if (ocrMode) {
+        const params = new URLSearchParams({
+          url: connection.url,
+          sid: connection.sid,
+          q: searchQuery,
+        });
+        const res = await fetch(`/api/ocr/search?${params}`);
+        const data = await res.json();
+        if (data.success) {
+          setFolders([]);
+          setImages(data.assets);
+        }
+      } else {
+        const params = new URLSearchParams({
+          url: connection.url,
+          sid: connection.sid,
+          path: folderPath,
+          q: searchQuery,
+        });
+        const res = await fetch(`/api/synology/search?${params}`);
+        const data = await res.json();
+        if (data.success) {
+          setFolders([]);
+          setImages(data.assets);
+        }
       }
     } catch {
       // silently fail
@@ -90,15 +122,66 @@ export default function ImageBrowser() {
     }
   };
 
+  const startOcrProcessing = async () => {
+    if (!connection || images.length === 0) return;
+
+    const files = images.map((img) => ({ path: img.path, name: img.name }));
+
+    try {
+      const res = await fetch("/api/ocr/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nasUrl: connection.url,
+          sid: connection.sid,
+          files,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.jobId) {
+        setOcrJobId(data.jobId);
+        setOcrProgress({ total: data.total, done: 0, current: "시작 중..." });
+
+        pollRef.current = setInterval(async () => {
+          const statusRes = await fetch(`/api/ocr/process?jobId=${data.jobId}`);
+          const statusData = await statusRes.json();
+
+          if (statusData.success) {
+            setOcrProgress({
+              total: statusData.total || data.total,
+              done: statusData.done || 0,
+              current: statusData.current || "",
+            });
+
+            if (statusData.finished || statusData.done) {
+              if (statusData.finished) {
+                if (pollRef.current) clearInterval(pollRef.current);
+                pollRef.current = null;
+                setOcrJobId(null);
+              }
+            }
+          }
+        }, 2000);
+      } else if (data.processed === 0) {
+        setOcrProgress({ total: 0, done: 0, current: "이미 모든 이미지가 처리됨" });
+        setTimeout(() => setOcrProgress({ total: 0, done: 0, current: "" }), 3000);
+      }
+    } catch {
+      setError("OCR 처리 시작 실패");
+    }
+  };
+
   const navigateTo = (path: string) => {
     setFolderPath(path);
   };
 
   const goUp = () => {
-    if (folderPath === "/") return;
+    if (folderPath === "/photo") return;
     const parts = folderPath.split("/").filter(Boolean);
     parts.pop();
-    navigateTo(parts.length === 0 ? "/" : "/" + parts.join("/"));
+    navigateTo("/" + parts.join("/"));
   };
 
   const isSelected = (image: ImageAsset) =>
@@ -117,7 +200,7 @@ export default function ImageBrowser() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="이미지 검색..."
+              placeholder={ocrMode ? "이미지 속 텍스트 검색..." : "파일명 검색..."}
               className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-gray-100 border-none focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
@@ -130,38 +213,73 @@ export default function ImageBrowser() {
           </button>
         </div>
 
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setOcrMode(false)}
+            className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+              !ocrMode ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            파일명
+          </button>
+          <button
+            onClick={() => setOcrMode(true)}
+            className={`px-2.5 py-1 text-xs rounded-full transition-colors flex items-center gap-1 ${
+              ocrMode ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            <ScanText className="w-3 h-3" />
+            텍스트(OCR)
+          </button>
+          <button
+            onClick={startOcrProcessing}
+            disabled={!!ocrJobId || images.length === 0}
+            className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
+            title="현재 폴더의 이미지에서 텍스트 추출"
+          >
+            <ScanText className="w-3 h-3" />
+            OCR 실행
+          </button>
+        </div>
+
+        {(ocrJobId || ocrProgress.current) && (
+          <div className="bg-amber-50 rounded-lg px-3 py-2 space-y-1">
+            <div className="flex items-center justify-between text-xs text-amber-700">
+              <span>OCR 처리 중... {ocrProgress.done}/{ocrProgress.total}</span>
+              <span className="truncate ml-2 max-w-[120px]">{ocrProgress.current}</span>
+            </div>
+            {ocrProgress.total > 0 && (
+              <div className="w-full bg-amber-200 rounded-full h-1.5">
+                <div
+                  className="bg-amber-500 h-1.5 rounded-full transition-all"
+                  style={{ width: `${(ocrProgress.done / ocrProgress.total) * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-1 text-xs text-gray-500 overflow-x-auto">
-          {folderPath !== "/" && (
-            <button
-              onClick={goUp}
-              className="hover:text-purple-600 shrink-0 p-0.5"
-            >
+          {folderPath !== "/photo" && (
+            <button onClick={goUp} className="hover:text-purple-600 shrink-0 p-0.5">
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
           )}
-          <button
-            onClick={() => navigateTo("/")}
-            className="hover:text-purple-600 shrink-0"
-          >
+          <button onClick={() => navigateTo("/photo")} className="hover:text-purple-600 shrink-0">
             <FolderOpen className="w-3.5 h-3.5" />
           </button>
           {breadcrumbs.map((part, i) => (
             <span key={i} className="flex items-center gap-1 shrink-0">
               <ChevronRight className="w-3 h-3" />
               <button
-                onClick={() =>
-                  navigateTo("/" + breadcrumbs.slice(0, i + 1).join("/"))
-                }
+                onClick={() => navigateTo("/" + breadcrumbs.slice(0, i + 1).join("/"))}
                 className="hover:text-purple-600"
               >
                 {part}
               </button>
             </span>
           ))}
-          <button
-            onClick={() => loadContents(folderPath)}
-            className="ml-auto shrink-0 hover:text-purple-600"
-          >
+          <button onClick={() => loadContents(folderPath)} className="ml-auto shrink-0 hover:text-purple-600">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -207,33 +325,50 @@ export default function ImageBrowser() {
 
             {images.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
-                {images.map((image) => (
-                  <button
-                    key={image.id}
-                    onClick={() => toggleImageSelection(image)}
-                    className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                      isSelected(image)
-                        ? "border-purple-600 ring-2 ring-purple-200"
-                        : "border-transparent hover:border-gray-300"
-                    }`}
-                  >
-                    <img
-                      src={image.thumbnailUrl}
-                      alt={image.name}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                    {isSelected(image) && (
-                      <div className="absolute top-2 right-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
-                        <Check className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                      <p className="text-white text-xs truncate">{image.name}</p>
+                {images.map((image) => {
+                  const imgWithOcr = image as ImageAssetWithOcr;
+                  return (
+                    <div key={image.id} className="relative">
+                      <button
+                        onClick={() => toggleImageSelection(image)}
+                        onMouseEnter={() => imgWithOcr.ocrText ? setHoveredOcr(image.id) : null}
+                        onMouseLeave={() => setHoveredOcr(null)}
+                        className={`relative group aspect-square rounded-lg overflow-hidden border-2 transition-all w-full ${
+                          isSelected(image)
+                            ? "border-purple-600 ring-2 ring-purple-200"
+                            : "border-transparent hover:border-gray-300"
+                        }`}
+                      >
+                        <img
+                          src={image.thumbnailUrl}
+                          alt={image.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                        {isSelected(image) && (
+                          <div className="absolute top-2 right-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
+                            <Check className="w-4 h-4 text-white" />
+                          </div>
+                        )}
+                        {imgWithOcr.ocrText && (
+                          <div className="absolute top-2 left-2 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                            <FileText className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                          <p className="text-white text-xs truncate">{image.name}</p>
+                        </div>
+                      </button>
+                      {hoveredOcr === image.id && imgWithOcr.ocrText && (
+                        <div className="absolute z-10 left-0 right-0 -bottom-1 translate-y-full bg-gray-900 text-white text-xs p-2 rounded-lg shadow-lg max-h-24 overflow-y-auto">
+                          <p className="text-amber-400 text-[10px] font-medium mb-0.5">추출된 텍스트:</p>
+                          <p className="whitespace-pre-wrap leading-relaxed">{imgWithOcr.ocrText}</p>
+                        </div>
+                      )}
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             ) : folders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400">
