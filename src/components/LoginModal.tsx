@@ -39,8 +39,16 @@ export default function LoginModal() {
         fetch(`${BASE}/api/ocr/sync`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nasUrl: data.url, sid: data.sid, action: "download" }),
-        }).catch(() => {});
+          body: JSON.stringify({ nasUrl: data.url, sid: data.sid, action: "upload" }),
+        })
+          .then(() =>
+            fetch(`${BASE}/api/ocr/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ nasUrl: data.url, sid: data.sid, action: "download" }),
+            })
+          )
+          .catch(() => {});
       } else {
         setError(data.error || "로그인에 실패했습니다.");
       }
