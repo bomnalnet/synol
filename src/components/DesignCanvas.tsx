@@ -34,6 +34,11 @@ function CanvasElement({
     };
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    if (element.type === "background") return;
+    e.stopPropagation();
+  };
+
   useEffect(() => {
     if (!dragging) return;
 
@@ -84,6 +89,7 @@ function CanvasElement({
     return (
       <div
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         style={{
           ...style,
           borderRadius: borderRadius ? borderRadius * scale : undefined,
@@ -116,6 +122,7 @@ function CanvasElement({
     return (
       <div
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         style={{
           ...style,
           color: (element.props.fill as string) || "#000",
@@ -144,6 +151,7 @@ function CanvasElement({
     return (
       <div
         onMouseDown={handleMouseDown}
+        onClick={handleClick}
         style={{
           ...style,
           backgroundColor: (element.props.fill as string) || "#ccc",

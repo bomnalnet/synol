@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchByText } from "@/lib/ocr-db";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q");
@@ -18,8 +20,8 @@ export async function GET(request: NextRequest) {
     path: r.file_path,
     name: r.file_name,
     ocrText: r.ocr_text,
-    thumbnailUrl: `/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(r.file_path)}&thumb=true`,
-    fullUrl: `/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(r.file_path)}`,
+    thumbnailUrl: `${BASE}/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(r.file_path)}&thumb=true`,
+    fullUrl: `${BASE}/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(r.file_path)}`,
     size: 0,
     modifiedAt: 0,
   }));

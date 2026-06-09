@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { SynologyClient } from "@/lib/synology";
 import { isImageFile } from "@/lib/synology";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const nasUrl = searchParams.get("url");
@@ -47,8 +49,8 @@ export async function GET(request: NextRequest) {
       id: Buffer.from(f.path).toString("base64url"),
       path: f.path,
       name: f.name,
-      thumbnailUrl: `/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(f.path)}&thumb=true`,
-      fullUrl: `/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(f.path)}`,
+      thumbnailUrl: `${BASE}/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(f.path)}&thumb=true`,
+      fullUrl: `${BASE}/api/synology/download?url=${encodeURIComponent(nasUrl)}&sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(f.path)}`,
       size: f.additional?.size ?? 0,
       modifiedAt: f.additional?.time?.mtime ?? 0,
     }));
