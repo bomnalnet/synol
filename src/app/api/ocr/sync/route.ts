@@ -44,15 +44,18 @@ async function handleUpload(client: SynologyClient) {
     }
 
     const json = JSON.stringify(rows, null, 2);
+    console.log(`[OCR Sync] Uploading ${rows.length} entries to NAS...`);
     const success = await client.uploadFile(METADATA_PATH, METADATA_FILE, json);
 
     if (success) {
       console.log(`[OCR Sync] Uploaded ${rows.length} entries to NAS`);
       return NextResponse.json({ success: true, count: rows.length });
     } else {
+      console.error(`[OCR Sync] Upload failed`);
       return NextResponse.json({ success: false, error: "NAS 업로드 실패" }, { status: 500 });
     }
   } catch (error) {
+    console.error(`[OCR Sync] Upload error:`, (error as Error).message);
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
   }
 }

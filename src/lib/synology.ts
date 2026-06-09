@@ -141,6 +141,9 @@ export class SynologyClient {
 
     const res = await fetch(uploadUrl, { method: "POST", body: formData });
     const data = await res.json();
+    if (!data.success) {
+      console.error("[Synology Upload] Failed:", JSON.stringify(data));
+    }
     return data.success === true;
   }
 
