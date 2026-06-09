@@ -33,8 +33,8 @@ export default function LoginModal() {
       const data = await res.json();
 
       if (data.success) {
-        setConnection({ url: data.url, sid: data.sid, currentPath: "/", account });
         useDesignStore.setState({ isAdmin: ADMIN_ACCOUNTS.includes(account) });
+        setConnection({ url: data.url, sid: data.sid, currentPath: "/", account });
 
         fetch(`${BASE}/api/ocr/sync`, {
           method: "POST",

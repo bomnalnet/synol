@@ -42,7 +42,7 @@ interface DesignState {
 
 export const useDesignStore = create<DesignState>((set) => ({
   connection: null,
-  setConnection: (conn) => set({ connection: conn, isAdmin: false }),
+  setConnection: (conn) => set({ connection: conn }),
   isAdmin: false,
   setCurrentPath: (path) =>
     set((state) => ({
