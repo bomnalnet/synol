@@ -45,3 +45,4 @@ next-env.d.ts
 ocr-metadata.db
 ocr-metadata.db-wal
 ocr-metadata.db-shm
+copydesign-deploy.tar.gz
