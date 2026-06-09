@@ -348,8 +348,32 @@ export default function ImageBrowser() {
         </div>
 
         {selectedImages.length > 0 && (
-          <div className="text-xs text-purple-600 font-medium">
-            {selectedImages.length}개 이미지 선택됨
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-purple-600 font-medium">
+              {selectedImages.length}개 이미지 선택됨
+            </span>
+            <button
+              onClick={() => {
+                const img = selectedImages[0];
+                const { setCurrentTemplate, setElements } = useDesignStore.getState();
+                const template = {
+                  id: "from-image",
+                  name: img.name,
+                  category: "이미지",
+                  width: 1080,
+                  height: 1080,
+                  thumbnail: "",
+                  elements: [
+                    { id: "bg", type: "background" as const, x: 0, y: 0, width: 1080, height: 1080, props: { fill: "#ffffff" } },
+                    { id: "main-image", type: "image" as const, x: 0, y: 0, width: 1080, height: 1080, props: { src: img.fullUrl, objectFit: "contain" } },
+                  ],
+                };
+                setCurrentTemplate(template);
+              }}
+              className="px-2 py-0.5 text-[10px] bg-purple-600 text-white rounded hover:bg-purple-700"
+            >
+              캔버스에 열기
+            </button>
           </div>
         )}
       </div>

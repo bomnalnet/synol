@@ -100,7 +100,8 @@ export default function TemplateGallery() {
     fetchCustomTemplates();
   }, [fetchCustomTemplates]);
 
-  const allTemplates = [...DESIGN_TEMPLATES, ...customTemplates];
+  const visibleBuiltins = DESIGN_TEMPLATES.filter((t) => !hiddenBuiltins.includes(t.id));
+  const allTemplates = [...visibleBuiltins, ...customTemplates];
   const categories = [...new Set(allTemplates.map((t) => t.category))];
 
   const filtered = selectedCategory
@@ -135,20 +136,37 @@ export default function TemplateGallery() {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, template: DesignTemplate) => {
     e.stopPropagation();
-    if (!confirm("이 템플릿을 삭제하시겠습니까?")) return;
+    if (!confirm(`"${template.name}" 템플릿을 삭제하시겠습니까?`)) return;
 
-    try {
-      const res = await fetch(`${BASE}/api/templates/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) {
-        setCustomTemplates((prev) => prev.filter((t) => t.id !== id));
+    if (template.id.startsWith("custom-")) {
+      try {
+        const res = await fetch(`${BASE}/api/templates/${template.id}`, { method: "DELETE" });
+        const data = await res.json();
+        if (data.success) {
+          setCustomTemplates((prev) => prev.filter((t) => t.id !== template.id));
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    } else {
+      setHiddenBuiltins((prev) => [...prev, template.id]);
+      localStorage.setItem(
+        "hidden-templates",
+        JSON.stringify([...hiddenBuiltins, template.id])
+      );
     }
   };
+
+  const [hiddenBuiltins, setHiddenBuiltins] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem("hidden-templates") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -208,9 +226,9 @@ export default function TemplateGallery() {
               <p className="text-xs text-gray-400">
                 {template.width}x{template.height}
               </p>
-              {isAdmin && template.id.startsWith("custom-") && (
+              {isAdmin && (
                 <button
-                  onClick={(e) => handleDelete(e, template.id)}
+                  onClick={(e) => handleDelete(e, template)}
                   className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <Trash2 className="w-3 h-3" />
