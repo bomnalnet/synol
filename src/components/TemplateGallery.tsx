@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
 import { DESIGN_TEMPLATES } from "@/lib/templates";
 import type { DesignTemplate } from "@/types";
-import { LayoutGrid, Save, Trash2, Loader2 } from "lucide-react";
+import { LayoutGrid, Save, Trash2, Loader2, ScanText } from "lucide-react";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -79,10 +79,11 @@ function TemplateThumbnail({ template }: { template: DesignTemplate }) {
 }
 
 export default function TemplateGallery() {
-  const { setCurrentTemplate, currentTemplate, elements, isAdmin } = useDesignStore();
+  const { setCurrentTemplate, currentTemplate, elements, isAdmin, setElements, addElement } = useDesignStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customTemplates, setCustomTemplates] = useState<DesignTemplate[]>([]);
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [hiddenBuiltins, setHiddenBuiltins] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -144,6 +145,41 @@ export default function TemplateGallery() {
     }
   };
 
+  const hasImageElement = elements.some(
+    (el) => el.type === "image" && el.props.src
+  );
+
+  const handleExtract = async () => {
+    if (!currentTemplate || !hasImageElement) return;
+    const imageEl = elements.find((el) => el.type === "image" && el.props.src);
+    if (!imageEl) return;
+
+    setExtracting(true);
+    try {
+      const res = await fetch(`${BASE}/api/design/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: imageEl.props.src,
+          canvasWidth: currentTemplate.width,
+          canvasHeight: currentTemplate.height,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.elements?.length > 0) {
+        for (const el of data.elements) {
+          addElement(el);
+        }
+      } else {
+        alert(data.error || "텍스트를 감지할 수 없습니다.");
+      }
+    } catch {
+      alert("요소 변환에 실패했습니다.");
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   const handleDelete = async (e: React.MouseEvent, template: DesignTemplate) => {
     e.stopPropagation();
     if (!confirm(`"${template.name}" 템플릿을 삭제하시겠습니까?`)) return;
@@ -170,6 +206,16 @@ export default function TemplateGallery() {
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 space-y-2">
+        {hasImageElement && (
+          <button
+            onClick={handleExtract}
+            disabled={extracting}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanText className="w-4 h-4" />}
+            {extracting ? "텍스트 감지 중..." : "이미지에서 텍스트 요소 추출"}
+          </button>
+        )}
         {isAdmin && elements.length > 0 && (
           <button
             onClick={handleSave}
