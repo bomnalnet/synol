@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useDesignStore } from "@/store/useDesignStore";
-import { DESIGN_TEMPLATES, getCategories } from "@/lib/templates";
+import { DESIGN_TEMPLATES } from "@/lib/templates";
 import type { DesignTemplate } from "@/types";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Save, Trash2, Loader2 } from "lucide-react";
+
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function TemplateThumbnail({ template }: { template: DesignTemplate }) {
   const aspect = template.width / template.height;
@@ -77,17 +79,91 @@ function TemplateThumbnail({ template }: { template: DesignTemplate }) {
 }
 
 export default function TemplateGallery() {
-  const { setCurrentTemplate } = useDesignStore();
+  const { setCurrentTemplate, currentTemplate, elements, isAdmin } = useDesignStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const categories = getCategories();
+  const [customTemplates, setCustomTemplates] = useState<DesignTemplate[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const fetchCustomTemplates = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/templates`);
+      const data = await res.json();
+      if (data.success) {
+        setCustomTemplates(data.templates);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCustomTemplates();
+  }, [fetchCustomTemplates]);
+
+  const allTemplates = [...DESIGN_TEMPLATES, ...customTemplates];
+  const categories = [...new Set(allTemplates.map((t) => t.category))];
 
   const filtered = selectedCategory
-    ? DESIGN_TEMPLATES.filter((t) => t.category === selectedCategory)
-    : DESIGN_TEMPLATES;
+    ? allTemplates.filter((t) => t.category === selectedCategory)
+    : allTemplates;
+
+  const handleSave = async () => {
+    if (!currentTemplate || elements.length === 0) return;
+    const name = window.prompt("템플릿 이름을 입력하세요");
+    if (!name?.trim()) return;
+
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          width: currentTemplate.width,
+          height: currentTemplate.height,
+          elements,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchCustomTemplates();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("이 템플릿을 삭제하시겠습니까?")) return;
+
+    try {
+      const res = await fetch(`${BASE}/api/templates/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setCustomTemplates((prev) => prev.filter((t) => t.id !== id));
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 space-y-2">
+        {isAdmin && elements.length > 0 && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            현재 디자인을 템플릿으로 저장
+          </button>
+        )}
+
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setSelectedCategory(null)}
@@ -121,7 +197,7 @@ export default function TemplateGallery() {
             <button
               key={template.id}
               onClick={() => setCurrentTemplate(template)}
-              className="text-left group"
+              className="text-left group relative"
             >
               <div className="transition-transform group-hover:scale-[1.02]">
                 <TemplateThumbnail template={template} />
@@ -132,6 +208,14 @@ export default function TemplateGallery() {
               <p className="text-xs text-gray-400">
                 {template.width}x{template.height}
               </p>
+              {isAdmin && template.id.startsWith("custom-") && (
+                <button
+                  onClick={(e) => handleDelete(e, template.id)}
+                  className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
             </button>
           ))}
         </div>
