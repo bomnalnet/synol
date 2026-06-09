@@ -145,8 +145,8 @@ export default function TemplateGallery() {
     }
   };
 
-  const hasImageElement = elements.some(
-    (el) => el.type === "image" && el.props.src
+  const hasImageElement = currentTemplate && elements.some(
+    (el) => el.type === "image"
   );
 
   const handleExtract = async () => {
