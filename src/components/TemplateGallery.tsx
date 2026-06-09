@@ -83,6 +83,14 @@ export default function TemplateGallery() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customTemplates, setCustomTemplates] = useState<DesignTemplate[]>([]);
   const [saving, setSaving] = useState(false);
+  const [hiddenBuiltins, setHiddenBuiltins] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem("hidden-templates") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   const fetchCustomTemplates = useCallback(async () => {
     try {
@@ -158,15 +166,6 @@ export default function TemplateGallery() {
       );
     }
   };
-
-  const [hiddenBuiltins, setHiddenBuiltins] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      return JSON.parse(localStorage.getItem("hidden-templates") || "[]");
-    } catch {
-      return [];
-    }
-  });
 
   return (
     <div className="flex flex-col h-full">
