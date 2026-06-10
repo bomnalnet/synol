@@ -153,9 +153,11 @@ export default function ImageBrowser() {
   };
 
   const startOcrProcessing = async () => {
-    if (!connection || images.length === 0) return;
+    if (!connection) return;
 
-    const files = images.map((img) => ({ path: img.path, name: img.name }));
+    const includeSubfolders =
+      folders.length === 0 ||
+      confirm(`하위 폴더의 이미지도 모두 OCR 처리하시겠습니까?\n(취소 시 현재 폴더만 처리)`);
 
     try {
       const res = await fetch(`${BASE}/api/ocr/process`, {
@@ -164,7 +166,9 @@ export default function ImageBrowser() {
         body: JSON.stringify({
           nasUrl: connection.url,
           sid: connection.sid,
-          files,
+          ...(includeSubfolders
+            ? { folderPath, recursive: true }
+            : { files: images.map((img) => ({ path: img.path, name: img.name })) }),
           baseUrl: window.location.origin,
         }),
       });
@@ -279,12 +283,12 @@ export default function ImageBrowser() {
           {isAdmin && (
             <button
               onClick={startOcrProcessing}
-              disabled={!!ocrJobId || images.length === 0 || unprocessedCount === 0}
+              disabled={!!ocrJobId || (images.length === 0 && folders.length === 0)}
               className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
-              title="현재 폴더의 미처리 이미지에서 텍스트 추출"
+              title="현재 폴더(하위 폴더 포함)의 미처리 이미지에서 텍스트 추출"
             >
               <ScanText className="w-3 h-3" />
-              {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 완료"}
+              {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 실행"}
             </button>
           )}
         </div>

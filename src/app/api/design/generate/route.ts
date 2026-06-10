@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "@/lib/llm";
 import { getTemplateById } from "@/lib/templates";
-
-const anthropic = new Anthropic();
 
 export async function POST(request: NextRequest) {
   const { prompt, templateId, images, style, width, height } = await request.json();
@@ -45,23 +43,15 @@ ${style ? `요청 스타일: ${style}` : ""}
 }`;
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [
-        {
-          role: "user",
-          content: `다음 요청에 맞는 광고 디자인을 만들어주세요:\n\n${prompt}\n\n${
-            images.length > 0
-              ? `사용할 이미지 경로:\n${images.map((img: string, i: number) => `${i + 1}. ${img}`).join("\n")}`
-              : "이미지는 사용자가 나중에 추가합니다. placeholder로 표시해주세요."
-          }`,
-        },
-      ],
+    const text = await generateText({
       system: systemPrompt,
+      prompt: `다음 요청에 맞는 광고 디자인을 만들어주세요:\n\n${prompt}\n\n${
+        images.length > 0
+          ? `사용할 이미지 경로:\n${images.map((img: string, i: number) => `${i + 1}. ${img}`).join("\n")}`
+          : "이미지는 사용자가 나중에 추가합니다. placeholder로 표시해주세요."
+      }`,
+      maxTokens: 4096,
     });
-
-    const text = message.content[0].type === "text" ? message.content[0].text : "";
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

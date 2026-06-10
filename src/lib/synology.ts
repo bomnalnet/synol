@@ -65,6 +65,30 @@ export class SynologyClient {
     return res.json();
   }
 
+  // 하위 폴더까지 재귀적으로 모든 이미지 파일 수집 (maxDepth 제한)
+  async listImagesRecursive(folderPath: string, maxDepth = 10): Promise<SynologyFile[]> {
+    const results: SynologyFile[] = [];
+    const queue: Array<{ path: string; depth: number }> = [{ path: folderPath, depth: 0 }];
+
+    while (queue.length > 0) {
+      const { path, depth } = queue.shift()!;
+      const data = await this.listFiles(path);
+      const files = data.data?.files ?? [];
+
+      for (const f of files) {
+        if (f.isdir) {
+          if (depth < maxDepth) {
+            queue.push({ path: f.path, depth: depth + 1 });
+          }
+        } else if (isImageFile(f.name)) {
+          results.push(f);
+        }
+      }
+    }
+
+    return results;
+  }
+
   async listShares(): Promise<SynologyListResponse> {
     const url = this.buildUrl("SYNO.FileStation.List", "list_share", 2, {
       additional: '["size","time"]',

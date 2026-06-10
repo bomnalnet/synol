@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractText } from "@/lib/ocr-engine";
 import { saveOcrResult, isProcessed } from "@/lib/ocr-db";
+import { SynologyClient } from "@/lib/synology";
 
 interface JobStatus {
   total: number;
@@ -13,13 +14,29 @@ interface JobStatus {
 const processingStatus = new Map<string, JobStatus>();
 
 export async function POST(request: NextRequest) {
-  const { nasUrl, sid, files, baseUrl } = await request.json();
+  const { nasUrl, sid, files, folderPath, recursive, baseUrl } = await request.json();
 
-  if (!nasUrl || !sid || !files?.length) {
+  if (!nasUrl || !sid || (!files?.length && !folderPath)) {
     return NextResponse.json({ success: false, error: "Missing params" }, { status: 400 });
   }
 
-  const unprocessed = files.filter((f: { path: string }) => !isProcessed(f.path));
+  // folderPath + recursive가 지정되면 하위 폴더까지 모든 이미지를 수집
+  let targetFiles: Array<{ path: string; name: string }> = files || [];
+  if (folderPath && recursive) {
+    try {
+      const client = new SynologyClient(nasUrl);
+      client.setSid(sid);
+      const found = await client.listImagesRecursive(folderPath);
+      targetFiles = found.map((f) => ({ path: f.path, name: f.name }));
+    } catch (err) {
+      return NextResponse.json(
+        { success: false, error: `폴더 탐색 실패: ${(err as Error).message}` },
+        { status: 500 }
+      );
+    }
+  }
+
+  const unprocessed = targetFiles.filter((f) => !isProcessed(f.path));
 
   if (unprocessed.length === 0) {
     return NextResponse.json({ success: true, message: "All files already processed", processed: 0 });

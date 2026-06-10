@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic();
+import { generateText } from "@/lib/llm";
 
 export async function POST(request: NextRequest) {
   const { purpose, tone, keywords, existingCopy, platform, maxLength } = await request.json();
@@ -41,14 +39,11 @@ ${maxLength ? `글자 수 제한: ${maxLength}자 이내` : ""}
 ${existingCopy ? `기존 카피 참고:\n${existingCopy}` : ""}`;
 
   try {
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+    const text = await generateText({
       system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
+      prompt: userPrompt,
+      maxTokens: 4096,
     });
-
-    const text = message.content[0].type === "text" ? message.content[0].text : "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {

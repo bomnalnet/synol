@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "@/lib/llm";
 
-const anthropic = new Anthropic();
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export async function POST(request: NextRequest) {
@@ -40,24 +39,13 @@ export async function POST(request: NextRequest) {
         ? "image/webp"
         : "image/png";
 
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
-                data: base64,
-              },
-            },
-            {
-              type: "text",
-              text: `이 이미지(${w}x${h}px)에서 모든 텍스트 영역을 감지하세요.
+    const responseText = await generateText({
+      maxTokens: 4096,
+      image: {
+        data: base64,
+        mediaType: mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+      },
+      prompt: `이 이미지(${w}x${h}px)에서 모든 텍스트 영역을 감지하세요.
 
 각 텍스트 영역에 대해 다음 정보를 JSON 배열로 반환하세요:
 - text: 텍스트 내용
@@ -75,14 +63,7 @@ export async function POST(request: NextRequest) {
 
 반드시 아래 형식의 JSON만 출력하세요:
 { "texts": [ { "text": "...", "x": 0, "y": 0, "width": 0, "height": 0, "fontSize": 0, "fontWeight": "normal", "fill": "#000000", "textAlign": "center" } ] }`,
-            },
-          ],
-        },
-      ],
     });
-
-    const responseText =
-      message.content[0].type === "text" ? message.content[0].text : "";
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
