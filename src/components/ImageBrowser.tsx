@@ -61,6 +61,8 @@ export default function ImageBrowser() {
   // AbortController for cancellable search
   const searchAbortRef = useRef<AbortController | null>(null);
 
+  const [openingCanvas, setOpeningCanvas] = useState(false);
+
   const checkOcrStatus = useCallback(async (assets: ImageAsset[]) => {
     if (assets.length === 0) return;
     try {
@@ -128,6 +130,39 @@ export default function ImageBrowser() {
       .then((d) => { if (d.success) setIndexCount(d.count); })
       .catch(() => {});
   }, [connection]);
+
+  const openImageOnCanvas = async (img: ImageAsset) => {
+    const { setCurrentTemplate, setElements } = useDesignStore.getState();
+
+    const CANVAS_W = 1080;
+    const CANVAS_H = 1080;
+
+    // 즉시 이미지만 캔버스에 표시
+    const baseElements = [
+      { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#ffffff" } },
+      { id: "main-image", type: "image" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { src: img.fullUrl, objectFit: "cover" } },
+    ];
+    setCurrentTemplate({ id: "from-image", name: img.name, category: "이미지", width: CANVAS_W, height: CANVAS_H, thumbnail: "", elements: baseElements });
+
+    // AI로 텍스트 영역 분석 (백그라운드)
+    setOpeningCanvas(true);
+    try {
+      const res = await fetch(`${BASE}/api/design/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: img.fullUrl, canvasWidth: CANVAS_W, canvasHeight: CANVAS_H }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.elements) && data.elements.length > 0) {
+        // 이미지 위에 텍스트 레이어 추가
+        setElements([...baseElements, ...data.elements]);
+      }
+    } catch {
+      // 분석 실패해도 이미지는 이미 열려있음
+    } finally {
+      setOpeningCanvas(false);
+    }
+  };
 
   const cancelIndexBuild = () => {
     if (indexPollRef.current) clearInterval(indexPollRef.current);
@@ -486,29 +521,18 @@ export default function ImageBrowser() {
         {selectedImages.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-purple-600 font-medium">
-              {selectedImages.length}개 이미지 선택됨
+              {selectedImages.length}개 선택됨
             </span>
             <button
-              onClick={() => {
-                const img = selectedImages[0];
-                const { setCurrentTemplate, setElements } = useDesignStore.getState();
-                const template = {
-                  id: "from-image",
-                  name: img.name,
-                  category: "이미지",
-                  width: 1080,
-                  height: 1080,
-                  thumbnail: "",
-                  elements: [
-                    { id: "bg", type: "background" as const, x: 0, y: 0, width: 1080, height: 1080, props: { fill: "#ffffff" } },
-                    { id: "main-image", type: "image" as const, x: 0, y: 0, width: 1080, height: 1080, props: { src: img.fullUrl, objectFit: "contain" } },
-                  ],
-                };
-                setCurrentTemplate(template);
-              }}
-              className="px-2 py-0.5 text-[10px] bg-purple-600 text-white rounded hover:bg-purple-700"
+              onClick={() => openImageOnCanvas(selectedImages[0])}
+              disabled={openingCanvas}
+              className="px-2 py-0.5 text-[10px] bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-60 flex items-center gap-1"
             >
-              캔버스에 열기
+              {openingCanvas ? (
+                <><Loader2 className="w-3 h-3 animate-spin" />분석 중...</>
+              ) : (
+                "캔버스에 열기"
+              )}
             </button>
           </div>
         )}
