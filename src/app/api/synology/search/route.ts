@@ -22,8 +22,20 @@ export async function GET(request: NextRequest) {
   client.setSid(sid);
 
   try {
-    const files = await client.searchFiles("/photo", query);
-    const images = files.filter((f) => isImageFile(f.name));
+    let files = await client.searchFiles("/photo", query);
+    let images = files.filter((f) => isImageFile(f.name));
+
+    // Synology search API often fails with Korean/CJK characters.
+    // Fall back to recursive listing + filename/path filter.
+    if (images.length === 0) {
+      const allImages = await client.listImagesRecursive("/photo", 5);
+      const lowerQuery = query.toLowerCase();
+      images = allImages.filter((f) => {
+        const name = f.name.toLowerCase();
+        const dir = f.path.toLowerCase();
+        return name.includes(lowerQuery) || dir.includes(lowerQuery);
+      });
+    }
 
     const assets = images.map((f) => ({
       id: Buffer.from(f.path).toString("base64url"),
