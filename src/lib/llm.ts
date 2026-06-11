@@ -16,7 +16,11 @@ const LOCAL_AI_URL = process.env.LOCAL_AI_URL?.replace(/\/$/, "");
 const LOCAL_AI_MODEL = process.env.LOCAL_AI_MODEL || "llama3.1";
 const LOCAL_AI_VISION_MODEL = process.env.LOCAL_AI_VISION_MODEL || "llava";
 
-const anthropic = new Anthropic();
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!_anthropic) _anthropic = new Anthropic();
+  return _anthropic;
+}
 
 export interface LlmImage {
   data: string; // base64
@@ -124,7 +128,7 @@ async function generateAnthropic(opts: LlmOptions): Promise<string> {
   }
   content.push({ type: "text", text: opts.prompt });
 
-  const message = await anthropic.messages.create({
+  const message = await getAnthropic().messages.create({
     model: opts.anthropicModel || "claude-sonnet-4-6",
     max_tokens: opts.maxTokens || 4096,
     system: opts.system,
