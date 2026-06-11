@@ -4,35 +4,65 @@ import sharp from "sharp";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// Sample median color from a region of the image buffer
-async function sampleRegionColor(
-  imgBuffer: Buffer,
+// Sample border color of a region (edges only, avoids text in center)
+async function sampleEdgeColor(
+  sharpImg: sharp.Sharp,
   imgW: number,
   imgH: number,
   rx: number,
   ry: number,
   rw: number,
   rh: number
-): Promise<string> {
-  try {
-    const left = Math.max(0, Math.round(rx));
-    const top = Math.max(0, Math.round(ry));
-    const width = Math.max(1, Math.min(Math.round(rw), imgW - left));
-    const height = Math.max(1, Math.min(Math.round(rh), imgH - top));
+): Promise<{ r: number; g: number; b: number }> {
+  const EDGE = 4;
+  const regions: Array<{ left: number; top: number; width: number; height: number }> = [];
 
-    const region = await sharp(imgBuffer)
-      .extract({ left, top, width, height })
-      .resize(1, 1, { kernel: "lanczos3" }) // downsample to single pixel = average color
-      .raw()
-      .toBuffer();
+  const left = Math.max(0, Math.round(rx));
+  const top = Math.max(0, Math.round(ry));
+  const right = Math.min(imgW, Math.round(rx + rw));
+  const bottom = Math.min(imgH, Math.round(ry + rh));
+  const w = right - left;
+  const h = bottom - top;
+  if (w < 1 || h < 1) return { r: 128, g: 128, b: 128 };
 
-    const r = region[0];
-    const g = region[1];
-    const b = region[2];
-    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-  } catch {
-    return "transparent";
+  // top edge
+  if (top > 0) regions.push({ left, top: Math.max(0, top - EDGE), width: w, height: Math.min(EDGE, top) });
+  // bottom edge
+  if (bottom < imgH) regions.push({ left, top: bottom, width: w, height: Math.min(EDGE, imgH - bottom) });
+  // left edge
+  if (left > 0) regions.push({ left: Math.max(0, left - EDGE), top, width: Math.min(EDGE, left), height: h });
+  // right edge
+  if (right < imgW) regions.push({ left: right, top, width: Math.min(EDGE, imgW - right), height: h });
+
+  if (regions.length === 0) {
+    // fallback: sample center
+    regions.push({ left, top, width: w, height: h });
   }
+
+  let totalR = 0, totalG = 0, totalB = 0, count = 0;
+  for (const reg of regions) {
+    if (reg.width < 1 || reg.height < 1) continue;
+    try {
+      const pixel = await sharpImg.clone()
+        .extract(reg)
+        .resize(1, 1, { kernel: "lanczos3" })
+        .raw()
+        .toBuffer();
+      totalR += pixel[0]; totalG += pixel[1]; totalB += pixel[2];
+      count++;
+    } catch { /* skip */ }
+  }
+
+  if (count === 0) return { r: 128, g: 128, b: 128 };
+  return {
+    r: Math.round(totalR / count),
+    g: Math.round(totalG / count),
+    b: Math.round(totalB / count),
+  };
+}
+
+function toHex(c: { r: number; g: number; b: number }): string {
+  return `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -56,14 +86,9 @@ export async function POST(request: NextRequest) {
     }
 
     const rawBuffer = Buffer.from(await res.arrayBuffer());
-
-    // Get actual image dimensions for accurate pixel sampling
     const meta = await sharp(rawBuffer).metadata();
     const imgW = meta.width || w;
     const imgH = meta.height || h;
-
-    // Normalize to raw RGBA for color sampling
-    const rgbaBuffer = await sharp(rawBuffer).ensureAlpha().raw().toBuffer();
 
     const contentType = res.headers.get("content-type") || "image/png";
     const mediaType = (
@@ -101,62 +126,64 @@ export async function POST(request: NextRequest) {
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    const ts = Date.now();
+    const texts = (parsed.texts || []) as Array<{
+      text: string; x: number; y: number; width: number; height: number;
+      fontSize: number; fontWeight: string; fill: string; textAlign: string;
+    }>;
 
-    const elements: Array<{
-      id: string;
-      type: "shape" | "text";
-      x: number; y: number; width: number; height: number;
-      props: Record<string, unknown>;
-    }> = [];
-
-    // Scale factor: AI coordinates are in canvas space (w x h), image is imgW x imgH
-    const scaleX = imgW / w;
-    const scaleY = imgH / h;
-
-    for (let i = 0; i < (parsed.texts || []).length; i++) {
-      const t = parsed.texts[i] as {
-        text: string; x: number; y: number; width: number; height: number;
-        fontSize: number; fontWeight: string; fill: string; textAlign: string;
-      };
-
-      const x = Math.round(t.x);
-      const y = Math.round(t.y);
-      const width = Math.round(t.width);
-      const height = Math.round(t.height);
-
-      // Sample actual pixel color from image at this region
-      const bgColor = await sampleRegionColor(
-        rgbaBuffer,
-        imgW, imgH,
-        x * scaleX, y * scaleY,
-        width * scaleX, height * scaleY
-      );
-
-      if (bgColor !== "transparent") {
-        elements.push({
-          id: `mask-${ts}-${i}`,
-          type: "shape",
-          x, y, width, height,
-          props: { fill: bgColor, borderRadius: 0 },
-        });
-      }
-
-      elements.push({
-        id: `text-${ts}-${i}`,
-        type: "text",
-        x, y, width, height,
-        props: {
-          text: t.text,
-          fontSize: t.fontSize || 24,
-          fontWeight: t.fontWeight || "normal",
-          fill: t.fill || "#000000",
-          textAlign: t.textAlign || "left",
-        },
-      });
+    if (texts.length === 0) {
+      return NextResponse.json({ success: true, elements: [], cleanBg: null });
     }
 
-    return NextResponse.json({ success: true, elements });
+    const scaleX = imgW / w;
+    const scaleY = imgH / h;
+    const sharpImg = sharp(rawBuffer);
+
+    // Build colored rectangles to erase text from background
+    const overlays: sharp.OverlayOptions[] = [];
+
+    for (const t of texts) {
+      const left = Math.max(0, Math.round(t.x * scaleX));
+      const top = Math.max(0, Math.round(t.y * scaleY));
+      const rw = Math.max(1, Math.min(Math.round(t.width * scaleX), imgW - left));
+      const rh = Math.max(1, Math.min(Math.round(t.height * scaleY), imgH - top));
+
+      const edgeColor = await sampleEdgeColor(sharp(rawBuffer), imgW, imgH, left, top, rw, rh);
+
+      // Create a filled rectangle SVG at this region's color
+      const svg = Buffer.from(
+        `<svg width="${rw}" height="${rh}"><rect width="${rw}" height="${rh}" fill="rgb(${edgeColor.r},${edgeColor.g},${edgeColor.b})"/></svg>`
+      );
+      overlays.push({ input: svg, left, top });
+    }
+
+    // Composite all rectangles onto the original image → cleaned background
+    const cleanedBuffer = await sharp(rawBuffer)
+      .composite(overlays)
+      .png()
+      .toBuffer();
+
+    const cleanBgBase64 = `data:image/png;base64,${cleanedBuffer.toString("base64")}`;
+
+    // Build text elements (no mask shapes needed — background is already clean)
+    const ts = Date.now();
+    const elements = texts.map((t, i) => ({
+      id: `text-${ts}-${i}`,
+      type: "text" as const,
+      x: Math.round(t.x),
+      y: Math.round(t.y),
+      width: Math.round(t.width),
+      height: Math.round(t.height),
+      props: {
+        text: t.text,
+        fontSize: t.fontSize || 24,
+        fontWeight: t.fontWeight || "normal",
+        fill: t.fill || "#000000",
+        textAlign: t.textAlign || "left",
+      },
+    }));
+
+    return NextResponse.json({ success: true, elements, cleanBg: cleanBgBase64 });
   } catch (error) {
     console.error("[Extract] Error:", error);
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });
