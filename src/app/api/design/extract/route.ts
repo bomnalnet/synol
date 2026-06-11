@@ -57,12 +57,13 @@ export async function POST(request: NextRequest) {
 - fontWeight: "normal" 또는 "bold"
 - fill: 텍스트 색상 (hex, 예: "#ffffff")
 - textAlign: "left", "center", 또는 "right"
+- bgColor: 텍스트 뒤 배경색 (hex). 배경이 이미지/사진이면 "transparent"
 
 배경, 도형, 로고 등은 무시하고 텍스트만 추출하세요.
-좌표는 이미지 전체 크기(${w}x${h}) 기준 비율로 추정하세요.
+좌표는 이미지 전체 크기(${w}x${h}) 기준 픽셀값으로 추정하세요.
 
 반드시 아래 형식의 JSON만 출력하세요:
-{ "texts": [ { "text": "...", "x": 0, "y": 0, "width": 0, "height": 0, "fontSize": 0, "fontWeight": "normal", "fill": "#000000", "textAlign": "center" } ] }`,
+{ "texts": [ { "text": "...", "x": 0, "y": 0, "width": 0, "height": 0, "fontSize": 0, "fontWeight": "normal", "fill": "#000000", "textAlign": "center", "bgColor": "#ffffff" } ] }`,
     });
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -75,7 +76,18 @@ export async function POST(request: NextRequest) {
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    const elements = (parsed.texts || []).map(
+    const ts = Date.now();
+    const elements: Array<{
+      id: string;
+      type: "shape" | "text";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      props: Record<string, unknown>;
+    }> = [];
+
+    (parsed.texts || []).forEach(
       (t: {
         text: string;
         x: number;
@@ -86,21 +98,43 @@ export async function POST(request: NextRequest) {
         fontWeight: string;
         fill: string;
         textAlign: string;
-      }, i: number) => ({
-        id: `extracted-text-${Date.now()}-${i}`,
-        type: "text" as const,
-        x: Math.round(t.x),
-        y: Math.round(t.y),
-        width: Math.round(t.width),
-        height: Math.round(t.height),
-        props: {
-          text: t.text,
-          fontSize: t.fontSize || 24,
-          fontWeight: t.fontWeight || "normal",
-          fill: t.fill || "#000000",
-          textAlign: t.textAlign || "left",
-        },
-      })
+        bgColor?: string;
+      }, i: number) => {
+        const x = Math.round(t.x);
+        const y = Math.round(t.y);
+        const width = Math.round(t.width);
+        const height = Math.round(t.height);
+
+        // 원본 이미지 텍스트를 가리는 마스크 사각형 (배경색이 있을 때만)
+        const bg = t.bgColor || "transparent";
+        if (bg && bg !== "transparent") {
+          elements.push({
+            id: `mask-${ts}-${i}`,
+            type: "shape" as const,
+            x,
+            y,
+            width,
+            height,
+            props: { fill: bg, borderRadius: 0 },
+          });
+        }
+
+        elements.push({
+          id: `text-${ts}-${i}`,
+          type: "text" as const,
+          x,
+          y,
+          width,
+          height,
+          props: {
+            text: t.text,
+            fontSize: t.fontSize || 24,
+            fontWeight: t.fontWeight || "normal",
+            fill: t.fill || "#000000",
+            textAlign: t.textAlign || "left",
+          },
+        });
+      }
     );
 
     return NextResponse.json({ success: true, elements });
