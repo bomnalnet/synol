@@ -118,7 +118,7 @@ export class SynologyClient {
 
     const listUrl = this.buildUrl("SYNO.FileStation.Search", "list", 2, {
       taskid: taskId,
-      limit: "100",
+      limit: "500",
       additional: '["size","time","thumbnail"]',
     });
 

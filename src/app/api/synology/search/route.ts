@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   client.setSid(sid);
 
   try {
-    const files = await client.searchFiles(folderPath, query);
+    const files = await client.searchFiles("/photo", query);
     const images = files.filter((f) => isImageFile(f.name));
 
     const assets = images.map((f) => ({
