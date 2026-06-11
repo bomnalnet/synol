@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
@@ -7,23 +6,13 @@ import { join } from "path";
 
 const execFileAsync = promisify(execFile);
 
-// AI 백엔드 선택:
-//   USE_CLAUDE_CODE=true  → 로컬 claude CLI 사용 (API 비용 없음, 로컬 실행 시)
-//   LOCAL_AI_URL=http://... → Ollama 등 OpenAI 호환 로컬 서버
-//   (둘 다 없으면) → Anthropic API 직접 호출
 const USE_CLAUDE_CODE = process.env.USE_CLAUDE_CODE === "true";
 const LOCAL_AI_URL = process.env.LOCAL_AI_URL?.replace(/\/$/, "");
 const LOCAL_AI_MODEL = process.env.LOCAL_AI_MODEL || "llama3.1";
 const LOCAL_AI_VISION_MODEL = process.env.LOCAL_AI_VISION_MODEL || "llava";
 
-let _anthropic: Anthropic | null = null;
-function getAnthropic(): Anthropic {
-  if (!_anthropic) _anthropic = new Anthropic();
-  return _anthropic;
-}
-
 export interface LlmImage {
-  data: string; // base64
+  data: string;
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 }
 
@@ -45,7 +34,6 @@ export async function generateText(opts: LlmOptions): Promise<string> {
   return generateAnthropic(opts);
 }
 
-// Claude Code CLI를 서브프로세스로 호출
 async function generateClaudeCode(opts: LlmOptions): Promise<string> {
   const args = ["-p", "--dangerously-skip-permissions"];
 
@@ -55,7 +43,6 @@ async function generateClaudeCode(opts: LlmOptions): Promise<string> {
 
   let prompt = opts.prompt;
 
-  // 이미지가 있으면 임시 파일로 저장 후 경로를 프롬프트에 포함
   let tmpImagePath: string | null = null;
   if (opts.image) {
     const ext = opts.image.mediaType.split("/")[1];
@@ -77,7 +64,6 @@ async function generateClaudeCode(opts: LlmOptions): Promise<string> {
   }
 }
 
-// Ollama 등 OpenAI 호환 로컬 서버
 async function generateLocalServer(opts: LlmOptions): Promise<string> {
   const model = opts.image ? LOCAL_AI_VISION_MODEL : LOCAL_AI_MODEL;
 
@@ -112,9 +98,12 @@ async function generateLocalServer(opts: LlmOptions): Promise<string> {
   return data.choices?.[0]?.message?.content || "";
 }
 
-// Anthropic API 직접 호출
 async function generateAnthropic(opts: LlmOptions): Promise<string> {
-  const content: Anthropic.ContentBlockParam[] = [];
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic();
+
+  type ContentBlock = { type: "image"; source: { type: "base64"; media_type: string; data: string } } | { type: "text"; text: string };
+  const content: ContentBlock[] = [];
 
   if (opts.image) {
     content.push({
@@ -128,11 +117,11 @@ async function generateAnthropic(opts: LlmOptions): Promise<string> {
   }
   content.push({ type: "text", text: opts.prompt });
 
-  const message = await getAnthropic().messages.create({
+  const message = await client.messages.create({
     model: opts.anthropicModel || "claude-sonnet-4-6",
     max_tokens: opts.maxTokens || 4096,
     system: opts.system,
-    messages: [{ role: "user", content }],
+    messages: [{ role: "user", content: content as never }],
   });
 
   return message.content[0].type === "text" ? message.content[0].text : "";
