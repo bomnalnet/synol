@@ -132,6 +132,33 @@ export default function PropertyPanel() {
                 className="w-full px-2 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none"
               />
             </div>
+            <div>
+              <label className="text-xs text-gray-400">폰트</label>
+              <select
+                value={(element.props.fontFamily as string) || ""}
+                onChange={(e) => updateProp("fontFamily", e.target.value)}
+                className="w-full px-2 py-1 text-xs rounded border border-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                style={{ fontFamily: (element.props.fontFamily as string) || "inherit" }}
+              >
+                <option value="">기본</option>
+                <optgroup label="한국어">
+                  <option value="'Noto Sans KR', sans-serif">Noto Sans KR</option>
+                  <option value="'Nanum Gothic', sans-serif">나눔고딕</option>
+                  <option value="'Nanum Myeongjo', serif">나눔명조</option>
+                  <option value="'Black Han Sans', sans-serif">검은고딕</option>
+                  <option value="'Do Hyeon', sans-serif">도현</option>
+                  <option value="'Gowun Dodum', sans-serif">고운돋움</option>
+                  <option value="'Nanum Gothic Coding', monospace">나눔고딕코딩</option>
+                </optgroup>
+                <optgroup label="영문/기타">
+                  <option value="sans-serif">Sans-serif</option>
+                  <option value="serif">Serif</option>
+                  <option value="monospace">Monospace</option>
+                  <option value="'Georgia', serif">Georgia</option>
+                  <option value="'Arial', sans-serif">Arial</option>
+                </optgroup>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs text-gray-400">크기</label>
@@ -151,17 +178,36 @@ export default function PropertyPanel() {
                 >
                   <option value="normal">일반</option>
                   <option value="bold">굵게</option>
+                  <option value="900">최굵게</option>
                 </select>
               </div>
             </div>
-            <div>
-              <label className="text-xs text-gray-400">텍스트 색상</label>
-              <input
-                type="color"
-                value={(element.props.fill as string) || "#000000"}
-                onChange={(e) => updateProp("fill", e.target.value)}
-                className="w-full h-8 rounded border border-gray-200 cursor-pointer"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-gray-400">텍스트 색상</label>
+                <input
+                  type="color"
+                  value={(element.props.fill as string)?.startsWith("#") ? (element.props.fill as string) : "#000000"}
+                  onChange={(e) => updateProp("fill", e.target.value)}
+                  className="w-full h-8 rounded border border-gray-200 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400">배경색</label>
+                <div className="flex gap-1">
+                  <input
+                    type="color"
+                    value={(element.props.background as string)?.startsWith("#") ? (element.props.background as string) : "#ffffff"}
+                    onChange={(e) => updateProp("background", e.target.value)}
+                    className="flex-1 h-8 rounded border border-gray-200 cursor-pointer"
+                  />
+                  <button
+                    onClick={() => updateProp("background", "transparent")}
+                    className="px-1.5 text-[10px] bg-gray-100 rounded border border-gray-200 hover:bg-gray-200"
+                    title="배경 없음"
+                  >없음</button>
+                </div>
+              </div>
             </div>
             <div>
               <label className="text-xs text-gray-400">정렬</label>

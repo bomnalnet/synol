@@ -119,6 +119,7 @@ function CanvasElement({
   }
 
   if (element.type === "text") {
+    const bg = element.props.background as string | undefined;
     return (
       <div
         onMouseDown={handleMouseDown}
@@ -128,8 +129,10 @@ function CanvasElement({
           color: (element.props.fill as string) || "#000",
           fontSize: ((element.props.fontSize as number) || 16) * scale,
           fontWeight: (element.props.fontWeight as string) || "normal",
+          fontFamily: (element.props.fontFamily as string) || undefined,
           textAlign: (element.props.textAlign as React.CSSProperties["textAlign"]) || "left",
           lineHeight: (element.props.lineHeight as number) || 1.4,
+          backgroundColor: bg && bg !== "transparent" ? bg : undefined,
           WebkitTextStroke: element.props.stroke
             ? `${((element.props.strokeWidth as number) || 1) * scale}px ${element.props.stroke}`
             : undefined,
