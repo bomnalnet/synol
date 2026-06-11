@@ -13,7 +13,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Missing params" }, { status: 400 });
   }
 
-  const results = searchByText(query);
+  const mode = searchParams.get("mode") || "and";
+  const keywords = query.trim().split(/\s+/).filter((w) => w.length > 0);
+
+  let results: ReturnType<typeof searchByText>;
+
+  if (keywords.length <= 1 || mode === "or") {
+    results = searchByText(query);
+  } else {
+    // AND 모드: 각 키워드 검색 후 교집합
+    const allSets = keywords.map((kw) => {
+      const r = searchByText(kw);
+      return new Map(r.map((item) => [item.file_path, item]));
+    });
+    const intersection = [...allSets[0].entries()].filter(([path]) =>
+      allSets.every((s) => s.has(path))
+    );
+    results = intersection.map(([, item]) => item);
+  }
 
   const assets = results.map((r) => ({
     id: Buffer.from(r.file_path).toString("base64url"),

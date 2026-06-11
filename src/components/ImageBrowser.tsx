@@ -46,6 +46,7 @@ export default function ImageBrowser() {
   const [ocrJobId, setOcrJobId] = useState<string | null>(null);
   const [ocrProgress, setOcrProgress] = useState({ total: 0, done: 0, current: "" });
   const [ocrMode, setOcrMode] = useState(false);
+  const [searchAnd, setSearchAnd] = useState(true);
   const [hoveredOcr, setHoveredOcr] = useState<string | null>(null);
   const [ocrStatusMap, setOcrStatusMap] = useState<Record<string, string>>({});
   const [unprocessedCount, setUnprocessedCount] = useState(0);
@@ -118,6 +119,7 @@ export default function ImageBrowser() {
           url: connection.url,
           sid: connection.sid,
           q: searchQuery,
+          mode: searchAnd ? "and" : "or",
         });
         const res = await fetch(`${BASE}/api/ocr/search?${params}`);
         const data = await res.json();
@@ -131,18 +133,59 @@ export default function ImageBrowser() {
           setOcrStatusMap(map);
         }
       } else {
-        const params = new URLSearchParams({
-          url: connection.url,
-          sid: connection.sid,
-          path: folderPath,
-          q: searchQuery,
-        });
-        const res = await fetch(`${BASE}/api/synology/search?${params}`);
-        const data = await res.json();
-        if (data.success) {
+        const keywords = searchQuery.trim().split(/\s+/);
+        if (keywords.length <= 1 || searchAnd) {
+          // 단일 키워드이거나 AND 모드: 모든 키워드가 포함된 결과만
+          const allResults = new Map<string, typeof images[0]>();
+          const hitCount = new Map<string, number>();
+
+          for (const kw of keywords) {
+            const params = new URLSearchParams({
+              url: connection.url,
+              sid: connection.sid,
+              path: folderPath,
+              q: kw,
+            });
+            const res = await fetch(`${BASE}/api/synology/search?${params}`);
+            const data = await res.json();
+            if (data.success) {
+              for (const asset of data.assets) {
+                allResults.set(asset.path, asset);
+                hitCount.set(asset.path, (hitCount.get(asset.path) || 0) + 1);
+              }
+            }
+          }
+
+          const filtered = [...allResults.values()].filter(
+            (a) => (hitCount.get(a.path) || 0) >= keywords.length
+          );
           setFolders([]);
-          setImages(data.assets);
-          checkOcrStatus(data.assets);
+          setImages(filtered);
+          checkOcrStatus(filtered);
+        } else {
+          // OR 모드: 하나라도 포함된 결과
+          const allResults = new Map<string, typeof images[0]>();
+
+          for (const kw of keywords) {
+            const params = new URLSearchParams({
+              url: connection.url,
+              sid: connection.sid,
+              path: folderPath,
+              q: kw,
+            });
+            const res = await fetch(`${BASE}/api/synology/search?${params}`);
+            const data = await res.json();
+            if (data.success) {
+              for (const asset of data.assets) {
+                allResults.set(asset.path, asset);
+              }
+            }
+          }
+
+          const merged = [...allResults.values()];
+          setFolders([]);
+          setImages(merged);
+          checkOcrStatus(merged);
         }
       }
     } catch {
@@ -279,6 +322,15 @@ export default function ImageBrowser() {
           >
             <ScanText className="w-3 h-3" />
             텍스트(OCR)
+          </button>
+          <button
+            onClick={() => setSearchAnd(!searchAnd)}
+            className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+              searchAnd ? "bg-blue-600 text-white" : "bg-orange-500 text-white"
+            }`}
+            title={searchAnd ? "모든 키워드 포함 (AND)" : "키워드 중 하나라도 포함 (OR)"}
+          >
+            {searchAnd ? "AND" : "OR"}
           </button>
           {isAdmin && (
             <button
