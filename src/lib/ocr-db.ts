@@ -20,6 +20,19 @@ function getDb(): Database.Database {
       );
       CREATE INDEX IF NOT EXISTS idx_ocr_text ON ocr_metadata(ocr_text);
       CREATE INDEX IF NOT EXISTS idx_file_path ON ocr_metadata(file_path);
+
+      CREATE TABLE IF NOT EXISTS file_index (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT UNIQUE NOT NULL,
+        file_name TEXT NOT NULL,
+        nas_url TEXT NOT NULL,
+        file_size INTEGER NOT NULL DEFAULT 0,
+        mtime INTEGER NOT NULL DEFAULT 0,
+        indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_fi_name ON file_index(file_name);
+      CREATE INDEX IF NOT EXISTS idx_fi_path ON file_index(file_path);
+      CREATE INDEX IF NOT EXISTS idx_fi_nas ON file_index(nas_url);
     `);
   }
   return db;
@@ -73,4 +86,70 @@ export function getUnprocessedPaths(filePaths: string[]): string[] {
   `).all(...filePaths) as Array<{ file_path: string }>;
   const processedSet = new Set(processed.map((r) => r.file_path));
   return filePaths.filter((p) => !processedSet.has(p));
+}
+
+// ── File Index ──────────────────────────────────────────────────────────────
+
+export function upsertFileIndex(
+  nasUrl: string,
+  filePath: string,
+  fileName: string,
+  fileSize: number,
+  mtime: number
+): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT OR REPLACE INTO file_index (file_path, file_name, nas_url, file_size, mtime, indexed_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `).run(filePath, fileName, nasUrl, fileSize, mtime);
+}
+
+export function clearFileIndex(nasUrl: string): void {
+  const db = getDb();
+  db.prepare("DELETE FROM file_index WHERE nas_url = ?").run(nasUrl);
+}
+
+export function getFileIndexCount(nasUrl: string): number {
+  const db = getDb();
+  const row = db.prepare("SELECT COUNT(*) as cnt FROM file_index WHERE nas_url = ?").get(nasUrl) as { cnt: number };
+  return row.cnt;
+}
+
+export function getFileIndexLastUpdated(nasUrl: string): string | null {
+  const db = getDb();
+  const row = db.prepare("SELECT MAX(indexed_at) as last FROM file_index WHERE nas_url = ?").get(nasUrl) as { last: string | null };
+  return row.last;
+}
+
+export function searchFileIndex(
+  nasUrl: string,
+  query: string,
+  limit = 200
+): Array<{ file_path: string; file_name: string; file_size: number; mtime: number }> {
+  const db = getDb();
+  const like = `%${query}%`;
+  return db.prepare(`
+    SELECT file_path, file_name, file_size, mtime
+    FROM file_index
+    WHERE nas_url = ? AND (file_name LIKE ? OR file_path LIKE ?)
+    ORDER BY mtime DESC
+    LIMIT ?
+  `).all(nasUrl, like, like, limit) as Array<{ file_path: string; file_name: string; file_size: number; mtime: number }>;
+}
+
+export function bulkUpsertFileIndex(
+  nasUrl: string,
+  files: Array<{ filePath: string; fileName: string; fileSize: number; mtime: number }>
+): void {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO file_index (file_path, file_name, nas_url, file_size, mtime, indexed_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `);
+  const insertMany = db.transaction((items: typeof files) => {
+    for (const f of items) {
+      stmt.run(f.filePath, f.fileName, nasUrl, f.fileSize, f.mtime);
+    }
+  });
+  insertMany(files);
 }

@@ -52,6 +52,12 @@ export default function ImageBrowser() {
   const [unprocessedCount, setUnprocessedCount] = useState(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
+  // File index state
+  const [indexCount, setIndexCount] = useState(0);
+  const [indexJobId, setIndexJobId] = useState<string | null>(null);
+  const [indexBuilding, setIndexBuilding] = useState(false);
+  const indexPollRef = useRef<NodeJS.Timeout | null>(null);
+
   const checkOcrStatus = useCallback(async (assets: ImageAsset[]) => {
     if (assets.length === 0) return;
     try {
@@ -107,8 +113,48 @@ export default function ImageBrowser() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (indexPollRef.current) clearInterval(indexPollRef.current);
     };
   }, []);
+
+  // Load index count on connect
+  useEffect(() => {
+    if (!connection) return;
+    fetch(`${BASE}/api/index/build?url=${encodeURIComponent(connection.url)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setIndexCount(d.count); })
+      .catch(() => {});
+  }, [connection]);
+
+  const startIndexBuild = async () => {
+    if (!connection || indexBuilding) return;
+    setIndexBuilding(true);
+    try {
+      const res = await fetch(`${BASE}/api/index/build`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nasUrl: connection.url, sid: connection.sid }),
+      });
+      const data = await res.json();
+      if (data.success && data.jobId) {
+        setIndexJobId(data.jobId);
+        indexPollRef.current = setInterval(async () => {
+          const s = await fetch(`${BASE}/api/index/build?jobId=${data.jobId}`).then((r) => r.json());
+          if (s.done) {
+            if (indexPollRef.current) clearInterval(indexPollRef.current);
+            indexPollRef.current = null;
+            setIndexJobId(null);
+            setIndexBuilding(false);
+            // Refresh count
+            const c = await fetch(`${BASE}/api/index/build?url=${encodeURIComponent(connection.url)}`).then((r) => r.json());
+            if (c.success) setIndexCount(c.count);
+          }
+        }, 2000);
+      }
+    } catch {
+      setIndexBuilding(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!connection || !searchQuery.trim()) return;
@@ -133,59 +179,73 @@ export default function ImageBrowser() {
           setOcrStatusMap(map);
         }
       } else {
-        const keywords = searchQuery.trim().split(/\s+/);
-        if (keywords.length <= 1 || searchAnd) {
-          // 단일 키워드이거나 AND 모드: 모든 키워드가 포함된 결과만
-          const allResults = new Map<string, typeof images[0]>();
-          const hitCount = new Map<string, number>();
+        const keywords = searchQuery.trim().split(/\s+/).filter(Boolean);
+        const useIndex = indexCount > 0;
 
-          for (const kw of keywords) {
-            const params = new URLSearchParams({
-              url: connection.url,
-              sid: connection.sid,
-              path: folderPath,
-              q: kw,
-            });
-            const res = await fetch(`${BASE}/api/synology/search?${params}`);
-            const data = await res.json();
-            if (data.success) {
-              for (const asset of data.assets) {
-                allResults.set(asset.path, asset);
-                hitCount.set(asset.path, (hitCount.get(asset.path) || 0) + 1);
+        if (useIndex) {
+          // Index-based search: instant, local DB
+          if (keywords.length <= 1 || !searchAnd) {
+            // Single keyword or OR: union of all keyword results
+            const allResults = new Map<string, typeof images[0]>();
+            for (const kw of keywords) {
+              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, q: kw });
+              const data = await fetch(`${BASE}/api/index/search?${params}`).then((r) => r.json());
+              if (data.success) {
+                for (const asset of data.assets) allResults.set(asset.path, asset);
               }
             }
+            const merged = [...allResults.values()];
+            setFolders([]);
+            setImages(merged);
+            checkOcrStatus(merged);
+          } else {
+            // AND: intersection across keywords
+            const sets = await Promise.all(
+              keywords.map((kw) => {
+                const params = new URLSearchParams({ url: connection.url, sid: connection.sid, q: kw });
+                return fetch(`${BASE}/api/index/search?${params}`)
+                  .then((r) => r.json())
+                  .then((d) => new Map<string, typeof images[0]>(d.success ? d.assets.map((a: typeof images[0]) => [a.path, a]) : []));
+              })
+            );
+            const intersection = [...sets[0].values()].filter((a) => sets.every((s) => s.has(a.path)));
+            setFolders([]);
+            setImages(intersection);
+            checkOcrStatus(intersection);
           }
-
-          const filtered = [...allResults.values()].filter(
-            (a) => (hitCount.get(a.path) || 0) >= keywords.length
-          );
-          setFolders([]);
-          setImages(filtered);
-          checkOcrStatus(filtered);
         } else {
-          // OR 모드: 하나라도 포함된 결과
-          const allResults = new Map<string, typeof images[0]>();
-
-          for (const kw of keywords) {
-            const params = new URLSearchParams({
-              url: connection.url,
-              sid: connection.sid,
-              path: folderPath,
-              q: kw,
-            });
-            const res = await fetch(`${BASE}/api/synology/search?${params}`);
-            const data = await res.json();
-            if (data.success) {
-              for (const asset of data.assets) {
-                allResults.set(asset.path, asset);
+          // Fallback: Synology search API (slower, falls back to recursive list internally)
+          if (keywords.length <= 1 || searchAnd) {
+            const allResults = new Map<string, typeof images[0]>();
+            const hitCount = new Map<string, number>();
+            for (const kw of keywords) {
+              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, path: folderPath, q: kw });
+              const data = await fetch(`${BASE}/api/synology/search?${params}`).then((r) => r.json());
+              if (data.success) {
+                for (const asset of data.assets) {
+                  allResults.set(asset.path, asset);
+                  hitCount.set(asset.path, (hitCount.get(asset.path) || 0) + 1);
+                }
               }
             }
+            const filtered = [...allResults.values()].filter((a) => (hitCount.get(a.path) || 0) >= keywords.length);
+            setFolders([]);
+            setImages(filtered);
+            checkOcrStatus(filtered);
+          } else {
+            const allResults = new Map<string, typeof images[0]>();
+            for (const kw of keywords) {
+              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, path: folderPath, q: kw });
+              const data = await fetch(`${BASE}/api/synology/search?${params}`).then((r) => r.json());
+              if (data.success) {
+                for (const asset of data.assets) allResults.set(asset.path, asset);
+              }
+            }
+            const merged = [...allResults.values()];
+            setFolders([]);
+            setImages(merged);
+            checkOcrStatus(merged);
           }
-
-          const merged = [...allResults.values()];
-          setFolders([]);
-          setImages(merged);
-          checkOcrStatus(merged);
         }
       }
     } catch {
@@ -333,15 +393,26 @@ export default function ImageBrowser() {
             {searchAnd ? "AND" : "OR"}
           </button>
           {isAdmin && (
-            <button
-              onClick={startOcrProcessing}
-              disabled={!!ocrJobId || (images.length === 0 && folders.length === 0)}
-              className="ml-auto px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
-              title="현재 폴더(하위 폴더 포함)의 미처리 이미지에서 텍스트 추출"
-            >
-              <ScanText className="w-3 h-3" />
-              {unprocessedCount > 0 ? `OCR 실행 (${unprocessedCount}개)` : "OCR 실행"}
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={startIndexBuild}
+                disabled={indexBuilding}
+                className="px-2.5 py-1 text-xs rounded-full bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 flex items-center gap-1"
+                title={indexCount > 0 ? `인덱스 재생성 (현재 ${indexCount.toLocaleString()}개)` : "전체 파일 인덱싱 (빠른 검색용)"}
+              >
+                {indexBuilding ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                {indexBuilding ? "인덱싱 중..." : indexCount > 0 ? `인덱스(${indexCount.toLocaleString()})` : "인덱싱"}
+              </button>
+              <button
+                onClick={startOcrProcessing}
+                disabled={!!ocrJobId || (images.length === 0 && folders.length === 0)}
+                className="px-2.5 py-1 text-xs rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
+                title="현재 폴더(하위 폴더 포함)의 미처리 이미지에서 텍스트 추출"
+              >
+                <ScanText className="w-3 h-3" />
+                {unprocessedCount > 0 ? `OCR(${unprocessedCount})` : "OCR"}
+              </button>
+            </div>
           )}
         </div>
 
