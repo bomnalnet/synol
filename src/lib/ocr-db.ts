@@ -123,18 +123,45 @@ export function getFileIndexLastUpdated(nasUrl: string): string | null {
 
 export function searchFileIndex(
   nasUrl: string,
-  query: string,
+  keywords: string[],
+  mode: "and" | "or" = "and",
   limit = 200
 ): Array<{ file_path: string; file_name: string; file_size: number; mtime: number }> {
   const db = getDb();
-  const like = `%${query}%`;
-  return db.prepare(`
-    SELECT file_path, file_name, file_size, mtime
-    FROM file_index
-    WHERE nas_url = ? AND (file_name LIKE ? OR file_path LIKE ?)
-    ORDER BY mtime DESC
-    LIMIT ?
-  `).all(nasUrl, like, like, limit) as Array<{ file_path: string; file_name: string; file_size: number; mtime: number }>;
+  const kws = keywords.filter((k) => k.length > 0);
+  if (kws.length === 0) return [];
+
+  if (mode === "and") {
+    // All keywords must match — each as a separate AND clause in SQL
+    const conditions = kws.map(() => "(file_name LIKE ? OR file_path LIKE ?)").join(" AND ");
+    const params: (string | number)[] = [nasUrl];
+    for (const kw of kws) {
+      params.push(`%${kw}%`, `%${kw}%`);
+    }
+    params.push(limit);
+    return db.prepare(`
+      SELECT file_path, file_name, file_size, mtime
+      FROM file_index
+      WHERE nas_url = ? AND ${conditions}
+      ORDER BY mtime DESC
+      LIMIT ?
+    `).all(...params) as Array<{ file_path: string; file_name: string; file_size: number; mtime: number }>;
+  } else {
+    // OR: any keyword matches
+    const conditions = kws.map(() => "(file_name LIKE ? OR file_path LIKE ?)").join(" OR ");
+    const params: (string | number)[] = [nasUrl];
+    for (const kw of kws) {
+      params.push(`%${kw}%`, `%${kw}%`);
+    }
+    params.push(limit);
+    return db.prepare(`
+      SELECT file_path, file_name, file_size, mtime
+      FROM file_index
+      WHERE nas_url = ? AND (${conditions})
+      ORDER BY mtime DESC
+      LIMIT ?
+    `).all(...params) as Array<{ file_path: string; file_name: string; file_size: number; mtime: number }>;
+  }
 }
 
 export function bulkUpsertFileIndex(
