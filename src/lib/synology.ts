@@ -99,9 +99,10 @@ export class SynologyClient {
   }
 
   async searchFiles(folderPath: string, pattern: string): Promise<SynologyFile[]> {
+    const wildcard = pattern.includes("*") ? pattern : `*${pattern}*`;
     const startUrl = this.buildUrl("SYNO.FileStation.Search", "start", 2, {
       folder_path: folderPath,
-      pattern,
+      pattern: wildcard,
       filetype: "file",
     });
 
