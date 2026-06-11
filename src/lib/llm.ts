@@ -1,10 +1,7 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-
-const execFileAsync = promisify(execFile);
 
 const USE_CLAUDE_CODE = process.env.USE_CLAUDE_CODE === "true";
 const LOCAL_AI_URL = process.env.LOCAL_AI_URL?.replace(/\/$/, "");
@@ -52,11 +49,30 @@ async function generateClaudeCode(opts: LlmOptions): Promise<string> {
   }
 
   try {
-    const { stdout } = await execFileAsync("claude", [...args, prompt], {
-      timeout: 120000,
-      maxBuffer: 10 * 1024 * 1024,
+    return await new Promise<string>((resolve, reject) => {
+      const proc = spawn("claude", args, {
+        timeout: 120000,
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
+      proc.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+
+      proc.stdin.write(prompt);
+      proc.stdin.end();
+
+      proc.on("close", (code: number | null) => {
+        if (code === 0) {
+          resolve(stdout.trim());
+        } else {
+          reject(new Error(`claude CLI 오류 (code ${code}): ${stderr.substring(0, 300)}`));
+        }
+      });
+
+      proc.on("error", (err: Error) => reject(err));
     });
-    return stdout.trim();
   } finally {
     if (tmpImagePath) {
       await unlink(tmpImagePath).catch(() => {});
