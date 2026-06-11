@@ -24,6 +24,7 @@ const PROMPT_EXAMPLES = [
 
 export default function AIGenerator() {
   const {
+    connection,
     selectedImages,
     currentTemplate,
     setCurrentTemplate,
@@ -54,6 +55,8 @@ export default function AIGenerator() {
           style,
           width: currentTemplate?.width || 1080,
           height: currentTemplate?.height || 1080,
+          nasUrl: connection?.url,
+          sid: connection?.sid,
         }),
       });
 
