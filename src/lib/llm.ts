@@ -1,10 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { writeFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 
-// 로컬 AI 서버 (Ollama 등 OpenAI 호환 API) 설정
-// LOCAL_AI_URL이 설정되면 Anthropic API 대신 로컬 서버를 사용합니다.
-// 예: LOCAL_AI_URL=http://localhost:11434  (Ollama)
-//     LOCAL_AI_MODEL=llama3.1              (텍스트 생성용)
-//     LOCAL_AI_VISION_MODEL=llava          (이미지 인식용)
+const execFileAsync = promisify(execFile);
+
+// AI 백엔드 선택:
+//   USE_CLAUDE_CODE=true  → 로컬 claude CLI 사용 (API 비용 없음, 로컬 실행 시)
+//   LOCAL_AI_URL=http://... → Ollama 등 OpenAI 호환 로컬 서버
+//   (둘 다 없으면) → Anthropic API 직접 호출
+const USE_CLAUDE_CODE = process.env.USE_CLAUDE_CODE === "true";
 const LOCAL_AI_URL = process.env.LOCAL_AI_URL?.replace(/\/$/, "");
 const LOCAL_AI_MODEL = process.env.LOCAL_AI_MODEL || "llama3.1";
 const LOCAL_AI_VISION_MODEL = process.env.LOCAL_AI_VISION_MODEL || "llava";
@@ -21,22 +28,53 @@ export interface LlmOptions {
   prompt: string;
   image?: LlmImage;
   maxTokens?: number;
-  // Anthropic 사용 시 모델 (기본: claude-sonnet-4-6, OCR 등 가벼운 작업엔 claude-haiku-4-5)
   anthropicModel?: string;
 }
 
-export function isLocalAi(): boolean {
-  return !!LOCAL_AI_URL;
-}
-
 export async function generateText(opts: LlmOptions): Promise<string> {
+  if (USE_CLAUDE_CODE) {
+    return generateClaudeCode(opts);
+  }
   if (LOCAL_AI_URL) {
-    return generateLocal(opts);
+    return generateLocalServer(opts);
   }
   return generateAnthropic(opts);
 }
 
-async function generateLocal(opts: LlmOptions): Promise<string> {
+// Claude Code CLI를 서브프로세스로 호출
+async function generateClaudeCode(opts: LlmOptions): Promise<string> {
+  const args = ["-p", "--dangerously-skip-permissions"];
+
+  if (opts.system) {
+    args.push("--system-prompt", opts.system);
+  }
+
+  let prompt = opts.prompt;
+
+  // 이미지가 있으면 임시 파일로 저장 후 경로를 프롬프트에 포함
+  let tmpImagePath: string | null = null;
+  if (opts.image) {
+    const ext = opts.image.mediaType.split("/")[1];
+    tmpImagePath = join(tmpdir(), `llm-img-${Date.now()}.${ext}`);
+    await writeFile(tmpImagePath, Buffer.from(opts.image.data, "base64"));
+    prompt = `이미지 파일 경로: ${tmpImagePath}\n\n${opts.prompt}`;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("claude", [...args, prompt], {
+      timeout: 120000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return stdout.trim();
+  } finally {
+    if (tmpImagePath) {
+      await unlink(tmpImagePath).catch(() => {});
+    }
+  }
+}
+
+// Ollama 등 OpenAI 호환 로컬 서버
+async function generateLocalServer(opts: LlmOptions): Promise<string> {
   const model = opts.image ? LOCAL_AI_VISION_MODEL : LOCAL_AI_MODEL;
 
   const userContent: unknown = opts.image
@@ -58,12 +96,7 @@ async function generateLocal(opts: LlmOptions): Promise<string> {
   const res = await fetch(`${LOCAL_AI_URL}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: opts.maxTokens || 4096,
-      stream: false,
-    }),
+    body: JSON.stringify({ model, messages, max_tokens: opts.maxTokens || 4096, stream: false }),
   });
 
   if (!res.ok) {
@@ -75,6 +108,7 @@ async function generateLocal(opts: LlmOptions): Promise<string> {
   return data.choices?.[0]?.message?.content || "";
 }
 
+// Anthropic API 직접 호출
 async function generateAnthropic(opts: LlmOptions): Promise<string> {
   const content: Anthropic.ContentBlockParam[] = [];
 
