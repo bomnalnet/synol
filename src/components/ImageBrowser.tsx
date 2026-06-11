@@ -58,6 +58,9 @@ export default function ImageBrowser() {
   const [indexBuilding, setIndexBuilding] = useState(false);
   const indexPollRef = useRef<NodeJS.Timeout | null>(null);
 
+  // AbortController for cancellable search
+  const searchAbortRef = useRef<AbortController | null>(null);
+
   const checkOcrStatus = useCallback(async (assets: ImageAsset[]) => {
     if (assets.length === 0) return;
     try {
@@ -126,8 +129,19 @@ export default function ImageBrowser() {
       .catch(() => {});
   }, [connection]);
 
+  const cancelIndexBuild = () => {
+    if (indexPollRef.current) clearInterval(indexPollRef.current);
+    indexPollRef.current = null;
+    setIndexJobId(null);
+    setIndexBuilding(false);
+  };
+
   const startIndexBuild = async () => {
-    if (!connection || indexBuilding) return;
+    if (!connection) return;
+    if (indexBuilding) {
+      cancelIndexBuild();
+      return;
+    }
     setIndexBuilding(true);
     try {
       const res = await fetch(`${BASE}/api/index/build`, {
@@ -145,7 +159,6 @@ export default function ImageBrowser() {
             indexPollRef.current = null;
             setIndexJobId(null);
             setIndexBuilding(false);
-            // Refresh count
             const c = await fetch(`${BASE}/api/index/build?url=${encodeURIComponent(connection.url)}`).then((r) => r.json());
             if (c.success) setIndexCount(c.count);
           }
@@ -156,9 +169,26 @@ export default function ImageBrowser() {
     }
   };
 
+  const cancelSearch = () => {
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+      searchAbortRef.current = null;
+    }
+    setSearching(false);
+  };
+
   const handleSearch = async () => {
     if (!connection || !searchQuery.trim()) return;
+
+    if (searching) {
+      cancelSearch();
+      return;
+    }
+
+    searchAbortRef.current = new AbortController();
+    const signal = searchAbortRef.current.signal;
     setSearching(true);
+
     try {
       if (ocrMode) {
         const params = new URLSearchParams({
@@ -167,7 +197,7 @@ export default function ImageBrowser() {
           q: searchQuery,
           mode: searchAnd ? "and" : "or",
         });
-        const res = await fetch(`${BASE}/api/ocr/search?${params}`);
+        const res = await fetch(`${BASE}/api/ocr/search?${params}`, { signal });
         const data = await res.json();
         if (data.success) {
           setFolders([]);
@@ -178,80 +208,53 @@ export default function ImageBrowser() {
           }
           setOcrStatusMap(map);
         }
+      } else if (indexCount > 0) {
+        // Index search: single API call handles AND/OR + multi-keyword
+        const params = new URLSearchParams({
+          url: connection.url,
+          sid: connection.sid,
+          q: searchQuery,
+          mode: searchAnd ? "and" : "or",
+        });
+        const res = await fetch(`${BASE}/api/index/search?${params}`, { signal });
+        const data = await res.json();
+        if (data.success) {
+          setFolders([]);
+          setImages(data.assets);
+          checkOcrStatus(data.assets);
+        }
       } else {
+        // Fallback: Synology search (per keyword)
         const keywords = searchQuery.trim().split(/\s+/).filter(Boolean);
-        const useIndex = indexCount > 0;
+        const allResults = new Map<string, typeof images[0]>();
+        const hitCount = new Map<string, number>();
 
-        if (useIndex) {
-          // Index-based search: instant, local DB
-          if (keywords.length <= 1 || !searchAnd) {
-            // Single keyword or OR: union of all keyword results
-            const allResults = new Map<string, typeof images[0]>();
-            for (const kw of keywords) {
-              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, q: kw });
-              const data = await fetch(`${BASE}/api/index/search?${params}`).then((r) => r.json());
-              if (data.success) {
-                for (const asset of data.assets) allResults.set(asset.path, asset);
-              }
+        for (const kw of keywords) {
+          const params = new URLSearchParams({ url: connection.url, sid: connection.sid, path: folderPath, q: kw });
+          const res = await fetch(`${BASE}/api/synology/search?${params}`, { signal });
+          const data = await res.json();
+          if (data.success) {
+            for (const asset of data.assets) {
+              allResults.set(asset.path, asset);
+              hitCount.set(asset.path, (hitCount.get(asset.path) || 0) + 1);
             }
-            const merged = [...allResults.values()];
-            setFolders([]);
-            setImages(merged);
-            checkOcrStatus(merged);
-          } else {
-            // AND: intersection across keywords
-            const sets = await Promise.all(
-              keywords.map((kw) => {
-                const params = new URLSearchParams({ url: connection.url, sid: connection.sid, q: kw });
-                return fetch(`${BASE}/api/index/search?${params}`)
-                  .then((r) => r.json())
-                  .then((d) => new Map<string, typeof images[0]>(d.success ? d.assets.map((a: typeof images[0]) => [a.path, a]) : []));
-              })
-            );
-            const intersection = [...sets[0].values()].filter((a) => sets.every((s) => s.has(a.path)));
-            setFolders([]);
-            setImages(intersection);
-            checkOcrStatus(intersection);
-          }
-        } else {
-          // Fallback: Synology search API (slower, falls back to recursive list internally)
-          if (keywords.length <= 1 || searchAnd) {
-            const allResults = new Map<string, typeof images[0]>();
-            const hitCount = new Map<string, number>();
-            for (const kw of keywords) {
-              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, path: folderPath, q: kw });
-              const data = await fetch(`${BASE}/api/synology/search?${params}`).then((r) => r.json());
-              if (data.success) {
-                for (const asset of data.assets) {
-                  allResults.set(asset.path, asset);
-                  hitCount.set(asset.path, (hitCount.get(asset.path) || 0) + 1);
-                }
-              }
-            }
-            const filtered = [...allResults.values()].filter((a) => (hitCount.get(a.path) || 0) >= keywords.length);
-            setFolders([]);
-            setImages(filtered);
-            checkOcrStatus(filtered);
-          } else {
-            const allResults = new Map<string, typeof images[0]>();
-            for (const kw of keywords) {
-              const params = new URLSearchParams({ url: connection.url, sid: connection.sid, path: folderPath, q: kw });
-              const data = await fetch(`${BASE}/api/synology/search?${params}`).then((r) => r.json());
-              if (data.success) {
-                for (const asset of data.assets) allResults.set(asset.path, asset);
-              }
-            }
-            const merged = [...allResults.values()];
-            setFolders([]);
-            setImages(merged);
-            checkOcrStatus(merged);
           }
         }
+
+        const filtered = searchAnd
+          ? [...allResults.values()].filter((a) => (hitCount.get(a.path) || 0) >= keywords.length)
+          : [...allResults.values()];
+        setFolders([]);
+        setImages(filtered);
+        checkOcrStatus(filtered);
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        // silently fail non-abort errors
+      }
     } finally {
       setSearching(false);
+      searchAbortRef.current = null;
     }
   };
 
@@ -358,10 +361,13 @@ export default function ImageBrowser() {
           </div>
           <button
             onClick={handleSearch}
-            disabled={searching}
-            className="px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+            className={`px-3 py-2 text-sm rounded-lg ${
+              searching
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-purple-600 text-white hover:bg-purple-700"
+            }`}
           >
-            {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : "검색"}
+            {searching ? <><Loader2 className="w-4 h-4 animate-spin inline mr-1" />취소</> : "검색"}
           </button>
         </div>
 
@@ -396,12 +402,15 @@ export default function ImageBrowser() {
             <div className="ml-auto flex items-center gap-1">
               <button
                 onClick={startIndexBuild}
-                disabled={indexBuilding}
-                className="px-2.5 py-1 text-xs rounded-full bg-green-100 text-green-700 hover:bg-green-200 disabled:opacity-50 flex items-center gap-1"
-                title={indexCount > 0 ? `인덱스 재생성 (현재 ${indexCount.toLocaleString()}개)` : "전체 파일 인덱싱 (빠른 검색용)"}
+                className={`px-2.5 py-1 text-xs rounded-full flex items-center gap-1 ${
+                  indexBuilding
+                    ? "bg-red-100 text-red-700 hover:bg-red-200"
+                    : "bg-green-100 text-green-700 hover:bg-green-200"
+                }`}
+                title={indexBuilding ? "인덱싱 취소" : indexCount > 0 ? `인덱스 재생성 (현재 ${indexCount.toLocaleString()}개)` : "전체 파일 인덱싱 (빠른 검색용)"}
               >
                 {indexBuilding ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                {indexBuilding ? "인덱싱 중..." : indexCount > 0 ? `인덱스(${indexCount.toLocaleString()})` : "인덱싱"}
+                {indexBuilding ? "취소" : indexCount > 0 ? `인덱스(${indexCount.toLocaleString()})` : "인덱싱"}
               </button>
               <button
                 onClick={startOcrProcessing}
