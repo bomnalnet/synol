@@ -131,36 +131,69 @@ export default function ImageBrowser() {
       .catch(() => {});
   }, [connection]);
 
-  const openImageOnCanvas = async (img: ImageAsset) => {
+  const openImageOnCanvas = async (imgs: ImageAsset[]) => {
+    if (imgs.length === 0) return;
     const { setCurrentTemplate, setElements } = useDesignStore.getState();
-
     const CANVAS_W = 1080;
     const CANVAS_H = 1080;
 
-    // 즉시 이미지만 캔버스에 표시
-    const baseElements = [
-      { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#ffffff" } },
-      { id: "main-image", type: "image" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { src: img.fullUrl, objectFit: "cover" } },
-    ];
-    setCurrentTemplate({ id: "from-image", name: img.name, category: "이미지", width: CANVAS_W, height: CANVAS_H, thumbnail: "", elements: baseElements });
+    if (imgs.length === 1) {
+      // 단일 이미지: AI 텍스트 추출
+      const img = imgs[0];
+      const baseElements = [
+        { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#ffffff" } },
+        { id: "img-0", type: "image" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { src: img.fullUrl, objectFit: "cover" } },
+      ];
+      setCurrentTemplate({ id: "from-image", name: img.name, category: "이미지", width: CANVAS_W, height: CANVAS_H, thumbnail: "", elements: baseElements });
 
-    // AI로 텍스트 영역 분석 (백그라운드)
-    setOpeningCanvas(true);
-    try {
-      const res = await fetch(`${BASE}/api/design/extract`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: img.fullUrl, canvasWidth: CANVAS_W, canvasHeight: CANVAS_H }),
+      setOpeningCanvas(true);
+      try {
+        const res = await fetch(`${BASE}/api/design/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: img.fullUrl, canvasWidth: CANVAS_W, canvasHeight: CANVAS_H }),
+        });
+        const data = await res.json();
+        if (data.success && Array.isArray(data.elements) && data.elements.length > 0) {
+          setElements([...baseElements, ...data.elements]);
+        }
+      } catch { /* 이미지는 이미 열려있음 */ }
+      finally { setOpeningCanvas(false); }
+
+    } else {
+      // 다중 이미지: 그리드 레이아웃 (최대 9개)
+      const count = Math.min(imgs.length, 9);
+      const cols = count <= 2 ? count : count <= 4 ? 2 : 3;
+      const rows = Math.ceil(count / cols);
+      const cellW = Math.floor(CANVAS_W / cols);
+      const cellH = Math.floor(CANVAS_H / rows);
+
+      const baseElements = [
+        { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#000000" } },
+        ...imgs.slice(0, count).map((img, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          return {
+            id: `img-${i}`,
+            type: "image" as const,
+            x: col * cellW + 2,
+            y: row * cellH + 2,
+            width: cellW - 4,
+            height: cellH - 4,
+            props: { src: img.fullUrl, objectFit: "cover" },
+          };
+        }),
+      ];
+
+      setCurrentTemplate({
+        id: "from-images",
+        name: `이미지 ${count}개`,
+        category: "이미지",
+        width: CANVAS_W,
+        height: CANVAS_H,
+        thumbnail: "",
+        elements: baseElements,
       });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.elements) && data.elements.length > 0) {
-        // 이미지 위에 텍스트 레이어 추가
-        setElements([...baseElements, ...data.elements]);
-      }
-    } catch {
-      // 분석 실패해도 이미지는 이미 열려있음
-    } finally {
-      setOpeningCanvas(false);
     }
   };
 
@@ -524,7 +557,7 @@ export default function ImageBrowser() {
               {selectedImages.length}개 선택됨
             </span>
             <button
-              onClick={() => openImageOnCanvas(selectedImages[0])}
+              onClick={() => openImageOnCanvas(selectedImages)}
               disabled={openingCanvas}
               className="px-2 py-0.5 text-[10px] bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-60 flex items-center gap-1"
             >
