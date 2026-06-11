@@ -115,23 +115,32 @@ export class SynologyClient {
 
     const taskId = startData.data.taskid;
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // 검색 완료될 때까지 폴링 (최대 15초)
+    let files: SynologyFile[] = [];
+    for (let i = 0; i < 10; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    const listUrl = this.buildUrl("SYNO.FileStation.Search", "list", 2, {
-      taskid: taskId,
-      limit: "500",
-      additional: '["size","time","thumbnail"]',
-    });
+      const listUrl = this.buildUrl("SYNO.FileStation.Search", "list", 2, {
+        taskid: taskId,
+        limit: "500",
+        additional: '["size","time","thumbnail"]',
+      });
 
-    const listRes = await fetch(listUrl);
-    const listData = await listRes.json();
+      const listRes = await fetch(listUrl);
+      const listData = await listRes.json();
+
+      files = listData.data?.files ?? [];
+      const finished = listData.data?.finished === true;
+
+      if (finished || files.length > 0) break;
+    }
 
     const stopUrl = this.buildUrl("SYNO.FileStation.Search", "stop", 2, {
       taskid: taskId,
     });
     await fetch(stopUrl);
 
-    return listData.data?.files ?? [];
+    return files;
   }
 
   getThumbnailUrl(path: string, size: "small" | "medium" | "large" = "medium"): string {
