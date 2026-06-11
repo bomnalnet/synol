@@ -26,6 +26,7 @@ export default function AIGenerator() {
   const {
     selectedImages,
     currentTemplate,
+    setCurrentTemplate,
     setElements,
     isGenerating,
     setIsGenerating,
@@ -59,7 +60,18 @@ export default function AIGenerator() {
       const data = await res.json();
 
       if (data.success && data.design) {
-        setElements(data.design.elements);
+        if (!currentTemplate) {
+          setCurrentTemplate({
+            id: "ai-generated",
+            name: "AI 생성 디자인",
+            category: "AI",
+            width: 1080,
+            height: 1080,
+            thumbnail: "",
+            elements: [],
+          });
+        }
+        setElements(data.design.elements || []);
         setSuggestions(data.design.suggestions || []);
       } else {
         setError(data.error || "디자인 생성에 실패했습니다.");

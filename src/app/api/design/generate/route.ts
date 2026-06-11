@@ -16,40 +16,22 @@ export async function POST(request: NextRequest) {
   const canvasWidth = width || template?.width || 1080;
   const canvasHeight = height || template?.height || 1080;
 
-  const systemPrompt = `당신은 광고 디자인 전문 AI입니다. 사용자의 요청에 따라 디자인 요소들을 JSON 형식으로 생성합니다.
+  try {
+    const fullPrompt = `당신은 광고 디자인 전문 AI입니다. 사용자의 요청에 따라 디자인 요소들을 JSON 형식으로 생성합니다.
 
 캔버스 크기: ${canvasWidth}x${canvasHeight}px
 ${template ? `기반 템플릿: ${template.name} (${template.category})` : ""}
 ${images.length > 0 ? `사용 가능한 이미지 ${images.length}개가 있습니다.` : ""}
 ${style ? `요청 스타일: ${style}` : ""}
 
-반드시 아래 JSON 형식으로만 응답하세요:
-{
-  "elements": [
-    {
-      "id": "고유ID",
-      "type": "background" | "image" | "text" | "shape",
-      "x": 숫자, "y": 숫자, "width": 숫자, "height": 숫자,
-      "rotation": 0,
-      "props": {
-        // background: { "fill": "#색상" 또는 "linear-gradient(...)" }
-        // image: { "src": "이미지경로", "objectFit": "cover"|"contain", "borderRadius": 숫자 }
-        // text: { "text": "내용", "fontSize": 숫자, "fontWeight": "normal"|"bold", "fill": "#색상", "textAlign": "left"|"center"|"right" }
-        // shape: { "shapeType": "rect"|"circle", "fill": "#색상", "borderRadius": 숫자, "text": "버튼텍스트", "textFill": "#색상" }
-      }
-    }
-  ],
-  "suggestions": ["디자인 개선 제안1", "제안2", "제안3"]
-}`;
+사용자 요청: ${prompt}
+${images.length > 0 ? `사용할 이미지 경로:\n${images.map((img: string, i: number) => `${i + 1}. ${img}`).join("\n")}` : "이미지는 사용자가 나중에 추가합니다. placeholder로 표시해주세요."}
 
-  try {
+반드시 아래 JSON 형식으로만 응답하세요. JSON 외에 다른 텍스트는 절대 포함하지 마세요:
+{"elements":[{"id":"bg","type":"background","x":0,"y":0,"width":${canvasWidth},"height":${canvasHeight},"rotation":0,"props":{"fill":"#색상"}},{"id":"text1","type":"text","x":숫자,"y":숫자,"width":숫자,"height":숫자,"rotation":0,"props":{"text":"내용","fontSize":숫자,"fontWeight":"normal|bold","fill":"#색상","textAlign":"left|center|right"}},{"id":"shape1","type":"shape","x":숫자,"y":숫자,"width":숫자,"height":숫자,"rotation":0,"props":{"fill":"#색상","borderRadius":숫자,"text":"버튼텍스트","textFill":"#색상"}}],"suggestions":["디자인 개선 제안1","제안2","제안3"]}`;
+
     const text = await generateText({
-      system: systemPrompt,
-      prompt: `다음 요청에 맞는 광고 디자인을 만들어주세요:\n\n${prompt}\n\n${
-        images.length > 0
-          ? `사용할 이미지 경로:\n${images.map((img: string, i: number) => `${i + 1}. ${img}`).join("\n")}`
-          : "이미지는 사용자가 나중에 추가합니다. placeholder로 표시해주세요."
-      }`,
+      prompt: fullPrompt,
       maxTokens: 4096,
     });
 
