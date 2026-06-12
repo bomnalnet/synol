@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "@/lib/llm";
-import sharp from "sharp";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -25,10 +24,6 @@ export async function POST(request: NextRequest) {
     }
 
     const rawBuffer = Buffer.from(await res.arrayBuffer());
-    const meta = await sharp(rawBuffer).metadata();
-    const imgW = meta.width || w;
-    const imgH = meta.height || h;
-
     const contentType = res.headers.get("content-type") || "image/png";
     const mediaType = (
       contentType.includes("jpeg") || contentType.includes("jpg") ? "image/jpeg"
@@ -70,43 +65,6 @@ export async function POST(request: NextRequest) {
       fontSize: number; fontWeight: string; fill: string; textAlign: string;
     }>;
 
-    if (texts.length === 0) {
-      return NextResponse.json({ success: true, elements: [], cleanBg: null });
-    }
-
-    const scaleX = imgW / w;
-    const scaleY = imgH / h;
-
-    // Create cleaned background: blur text regions from a heavily blurred copy
-    // 1. Make a fully blurred version of the image
-    const blurredBuffer = await sharp(rawBuffer)
-      .blur(30)
-      .toBuffer();
-
-    // 2. For each text region, extract the blurred patch and composite onto original
-    const overlays: sharp.OverlayOptions[] = [];
-
-    for (const t of texts) {
-      const left = Math.max(0, Math.round(t.x * scaleX));
-      const top = Math.max(0, Math.round(t.y * scaleY));
-      const rw = Math.max(1, Math.min(Math.round(t.width * scaleX), imgW - left));
-      const rh = Math.max(1, Math.min(Math.round(t.height * scaleY), imgH - top));
-
-      // Extract the blurred region
-      const blurredPatch = await sharp(blurredBuffer)
-        .extract({ left, top, width: rw, height: rh })
-        .toBuffer();
-
-      overlays.push({ input: blurredPatch, left, top });
-    }
-
-    const cleanedBuffer = await sharp(rawBuffer)
-      .composite(overlays)
-      .png()
-      .toBuffer();
-
-    const cleanBgBase64 = `data:image/png;base64,${cleanedBuffer.toString("base64")}`;
-
     const ts = Date.now();
     const elements = texts.map((t, i) => ({
       id: `text-${ts}-${i}`,
@@ -121,10 +79,11 @@ export async function POST(request: NextRequest) {
         fontWeight: t.fontWeight || "normal",
         fill: t.fill || "#000000",
         textAlign: t.textAlign || "left",
+        background: "transparent",
       },
     }));
 
-    return NextResponse.json({ success: true, elements, cleanBg: cleanBgBase64 });
+    return NextResponse.json({ success: true, elements });
   } catch (error) {
     console.error("[Extract] Error:", error);
     return NextResponse.json({ success: false, error: (error as Error).message }, { status: 500 });

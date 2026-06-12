@@ -138,7 +138,7 @@ export default function ImageBrowser() {
     const CANVAS_H = 1080;
 
     if (imgs.length === 1) {
-      // 단일 이미지: AI 텍스트 추출 + 배경 정리
+      // 단일 이미지: 원본 배경 그대로 + 투명 텍스트 레이어
       const img = imgs[0];
       const baseElements = [
         { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#ffffff" } },
@@ -155,14 +155,7 @@ export default function ImageBrowser() {
         });
         const data = await res.json();
         if (data.success && Array.isArray(data.elements) && data.elements.length > 0) {
-          // cleanBg: 텍스트가 지워진 깨끗한 배경 이미지
-          const bgSrc = data.cleanBg || img.fullUrl;
-          const cleanElements = [
-            { id: "bg", type: "background" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { fill: "#ffffff" } },
-            { id: "img-0", type: "image" as const, x: 0, y: 0, width: CANVAS_W, height: CANVAS_H, props: { src: bgSrc, objectFit: "cover" } },
-            ...data.elements,
-          ];
-          setElements(cleanElements);
+          setElements([...baseElements, ...data.elements]);
         }
       } catch { /* 이미지는 이미 열려있음 */ }
       finally { setOpeningCanvas(false); }
