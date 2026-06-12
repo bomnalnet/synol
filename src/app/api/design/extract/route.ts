@@ -4,67 +4,6 @@ import sharp from "sharp";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// Sample border color of a region (edges only, avoids text in center)
-async function sampleEdgeColor(
-  sharpImg: sharp.Sharp,
-  imgW: number,
-  imgH: number,
-  rx: number,
-  ry: number,
-  rw: number,
-  rh: number
-): Promise<{ r: number; g: number; b: number }> {
-  const EDGE = 4;
-  const regions: Array<{ left: number; top: number; width: number; height: number }> = [];
-
-  const left = Math.max(0, Math.round(rx));
-  const top = Math.max(0, Math.round(ry));
-  const right = Math.min(imgW, Math.round(rx + rw));
-  const bottom = Math.min(imgH, Math.round(ry + rh));
-  const w = right - left;
-  const h = bottom - top;
-  if (w < 1 || h < 1) return { r: 128, g: 128, b: 128 };
-
-  // top edge
-  if (top > 0) regions.push({ left, top: Math.max(0, top - EDGE), width: w, height: Math.min(EDGE, top) });
-  // bottom edge
-  if (bottom < imgH) regions.push({ left, top: bottom, width: w, height: Math.min(EDGE, imgH - bottom) });
-  // left edge
-  if (left > 0) regions.push({ left: Math.max(0, left - EDGE), top, width: Math.min(EDGE, left), height: h });
-  // right edge
-  if (right < imgW) regions.push({ left: right, top, width: Math.min(EDGE, imgW - right), height: h });
-
-  if (regions.length === 0) {
-    // fallback: sample center
-    regions.push({ left, top, width: w, height: h });
-  }
-
-  let totalR = 0, totalG = 0, totalB = 0, count = 0;
-  for (const reg of regions) {
-    if (reg.width < 1 || reg.height < 1) continue;
-    try {
-      const pixel = await sharpImg.clone()
-        .extract(reg)
-        .resize(1, 1, { kernel: "lanczos3" })
-        .raw()
-        .toBuffer();
-      totalR += pixel[0]; totalG += pixel[1]; totalB += pixel[2];
-      count++;
-    } catch { /* skip */ }
-  }
-
-  if (count === 0) return { r: 128, g: 128, b: 128 };
-  return {
-    r: Math.round(totalR / count),
-    g: Math.round(totalG / count),
-    b: Math.round(totalB / count),
-  };
-}
-
-function toHex(c: { r: number; g: number; b: number }): string {
-  return `#${c.r.toString(16).padStart(2, "0")}${c.g.toString(16).padStart(2, "0")}${c.b.toString(16).padStart(2, "0")}`;
-}
-
 export async function POST(request: NextRequest) {
   const { imageUrl, canvasWidth, canvasHeight } = await request.json();
 
@@ -137,9 +76,14 @@ export async function POST(request: NextRequest) {
 
     const scaleX = imgW / w;
     const scaleY = imgH / h;
-    const sharpImg = sharp(rawBuffer);
 
-    // Build colored rectangles to erase text from background
+    // Create cleaned background: blur text regions from a heavily blurred copy
+    // 1. Make a fully blurred version of the image
+    const blurredBuffer = await sharp(rawBuffer)
+      .blur(30)
+      .toBuffer();
+
+    // 2. For each text region, extract the blurred patch and composite onto original
     const overlays: sharp.OverlayOptions[] = [];
 
     for (const t of texts) {
@@ -148,16 +92,14 @@ export async function POST(request: NextRequest) {
       const rw = Math.max(1, Math.min(Math.round(t.width * scaleX), imgW - left));
       const rh = Math.max(1, Math.min(Math.round(t.height * scaleY), imgH - top));
 
-      const edgeColor = await sampleEdgeColor(sharp(rawBuffer), imgW, imgH, left, top, rw, rh);
+      // Extract the blurred region
+      const blurredPatch = await sharp(blurredBuffer)
+        .extract({ left, top, width: rw, height: rh })
+        .toBuffer();
 
-      // Create a filled rectangle SVG at this region's color
-      const svg = Buffer.from(
-        `<svg width="${rw}" height="${rh}"><rect width="${rw}" height="${rh}" fill="rgb(${edgeColor.r},${edgeColor.g},${edgeColor.b})"/></svg>`
-      );
-      overlays.push({ input: svg, left, top });
+      overlays.push({ input: blurredPatch, left, top });
     }
 
-    // Composite all rectangles onto the original image → cleaned background
     const cleanedBuffer = await sharp(rawBuffer)
       .composite(overlays)
       .png()
@@ -165,7 +107,6 @@ export async function POST(request: NextRequest) {
 
     const cleanBgBase64 = `data:image/png;base64,${cleanedBuffer.toString("base64")}`;
 
-    // Build text elements (no mask shapes needed — background is already clean)
     const ts = Date.now();
     const elements = texts.map((t, i) => ({
       id: `text-${ts}-${i}`,

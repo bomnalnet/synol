@@ -182,6 +182,8 @@ export default function DesignCanvas() {
     selectedElementId,
     setSelectedElementId,
     updateElement,
+    undo,
+    redo,
   } = useDesignStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -189,6 +191,22 @@ export default function DesignCanvas() {
 
   const canvasWidth = currentTemplate?.width || 1080;
   const canvasHeight = currentTemplate?.height || 1080;
+
+  // Ctrl+Z / Ctrl+Y keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
 
   const fitToView = () => {
     if (!containerRef.current) return;
