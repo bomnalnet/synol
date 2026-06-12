@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateText } from "@/lib/llm";
+import sharp from "sharp";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
@@ -24,6 +25,10 @@ export async function POST(request: NextRequest) {
     }
 
     const rawBuffer = Buffer.from(await res.arrayBuffer());
+    const meta = await sharp(rawBuffer).metadata();
+    const imgW = meta.width || w;
+    const imgH = meta.height || h;
+
     const contentType = res.headers.get("content-type") || "image/png";
     const mediaType = (
       contentType.includes("jpeg") || contentType.includes("jpg") ? "image/jpeg"
@@ -37,6 +42,9 @@ export async function POST(request: NextRequest) {
       maxTokens: 4096,
       image: { data: base64, mediaType },
       prompt: `이 이미지(${w}x${h}px)에서 모든 텍스트 영역을 감지하세요.
+
+텍스트 영역의 좌표는 반드시 텍스트가 차지하는 정확한 바운딩 박스로 잡으세요.
+여백 없이 텍스트에 딱 맞게 잡아야 합니다.
 
 각 텍스트 영역에 대해 다음 정보를 JSON 배열로 반환하세요:
 - text: 텍스트 내용
@@ -65,23 +73,47 @@ export async function POST(request: NextRequest) {
       fontSize: number; fontWeight: string; fill: string; textAlign: string;
     }>;
 
+    const scaleX = imgW / w;
+    const scaleY = imgH / h;
     const ts = Date.now();
-    const elements = texts.map((t, i) => ({
-      id: `text-${ts}-${i}`,
-      type: "text" as const,
-      x: Math.round(t.x),
-      y: Math.round(t.y),
-      width: Math.round(t.width),
-      height: Math.round(t.height),
-      props: {
-        text: t.text,
-        fontSize: t.fontSize || 24,
-        fontWeight: t.fontWeight || "normal",
-        fill: t.fill || "#000000",
-        textAlign: t.textAlign || "left",
-        background: "transparent",
-      },
-    }));
+
+    const elements = await Promise.all(
+      texts.map(async (t, i) => {
+        const x = Math.round(t.x);
+        const y = Math.round(t.y);
+        const width = Math.round(t.width);
+        const height = Math.round(t.height);
+
+        // Crop this region from original image → base64 data URL
+        const left = Math.max(0, Math.round(x * scaleX));
+        const top = Math.max(0, Math.round(y * scaleY));
+        const rw = Math.max(1, Math.min(Math.round(width * scaleX), imgW - left));
+        const rh = Math.max(1, Math.min(Math.round(height * scaleY), imgH - top));
+
+        let bgImage = "";
+        try {
+          const crop = await sharp(rawBuffer)
+            .extract({ left, top, width: rw, height: rh })
+            .png()
+            .toBuffer();
+          bgImage = `data:image/png;base64,${crop.toString("base64")}`;
+        } catch { /* fallback: no bg image */ }
+
+        return {
+          id: `text-${ts}-${i}`,
+          type: "text" as const,
+          x, y, width, height,
+          props: {
+            text: t.text,
+            fontSize: t.fontSize || 24,
+            fontWeight: t.fontWeight || "normal",
+            fill: t.fill || "#000000",
+            textAlign: t.textAlign || "left",
+            bgImage,
+          },
+        };
+      })
+    );
 
     return NextResponse.json({ success: true, elements });
   } catch (error) {

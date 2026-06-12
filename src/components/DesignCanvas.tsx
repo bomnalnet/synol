@@ -120,6 +120,7 @@ function CanvasElement({
 
   if (element.type === "text") {
     const bg = element.props.background as string | undefined;
+    const bgImg = element.props.bgImage as string | undefined;
     return (
       <div
         onMouseDown={handleMouseDown}
@@ -133,6 +134,8 @@ function CanvasElement({
           textAlign: (element.props.textAlign as React.CSSProperties["textAlign"]) || "left",
           lineHeight: (element.props.lineHeight as number) || 1.4,
           backgroundColor: bg && bg !== "transparent" ? bg : undefined,
+          backgroundImage: bgImg ? `url(${bgImg})` : undefined,
+          backgroundSize: bgImg ? "100% 100%" : undefined,
           WebkitTextStroke: element.props.stroke
             ? `${((element.props.strokeWidth as number) || 1) * scale}px ${element.props.stroke}`
             : undefined,
