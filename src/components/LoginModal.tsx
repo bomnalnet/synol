@@ -5,36 +5,41 @@ import { useDesignStore } from "@/store/useDesignStore";
 import { Server, Eye, EyeOff, Loader2 } from "lucide-react";
 
 const NAS_URL = "https://bom-nal.synology.me";
-const DEFAULT_ACCOUNT = "구태식";
-const DEFAULT_PASSWORD = "Bomnal2040";
-const ADMIN_ACCOUNTS = ["구태식"];
+const NAS_ACCOUNT = "구태식";
+const NAS_PASSWORD = "Bomnal2040";
+const GATE_PASSWORD = "3171";
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export default function LoginModal() {
   const { setConnection } = useDesignStore();
-  const [account, setAccount] = useState(DEFAULT_ACCOUNT);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
+
+    if (password !== GATE_PASSWORD) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch(`${BASE}/api/synology/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: NAS_URL, account, password }),
+        body: JSON.stringify({ url: NAS_URL, account: NAS_ACCOUNT, password: NAS_PASSWORD }),
       });
 
       const data = await res.json();
 
       if (data.success) {
-        useDesignStore.setState({ isAdmin: ADMIN_ACCOUNTS.includes(account) });
-        setConnection({ url: data.url, sid: data.sid, currentPath: "/", account });
+        useDesignStore.setState({ isAdmin: true });
+        setConnection({ url: data.url, sid: data.sid, currentPath: "/", account: NAS_ACCOUNT });
 
         fetch(`${BASE}/api/ocr/sync`, {
           method: "POST",
@@ -50,7 +55,7 @@ export default function LoginModal() {
           )
           .catch(() => {});
       } else {
-        setError(data.error || "로그인에 실패했습니다.");
+        setError(data.error || "NAS 연결에 실패했습니다.");
       }
     } catch {
       setError("서버에 연결할 수 없습니다.");
@@ -71,23 +76,6 @@ export default function LoginModal() {
         </div>
 
         <form onSubmit={handleLogin} className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 space-y-4">
-          <div className="bg-white/5 rounded-lg px-4 py-3 text-sm text-purple-200">
-            <span className="text-purple-400 text-xs">NAS 서버</span>
-            <p className="font-mono mt-0.5">{NAS_URL}</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-purple-200 mb-1">계정</label>
-            <input
-              type="text"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="사용자 이름"
-              className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              required
-            />
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-purple-200 mb-1">비밀번호</label>
             <div className="relative">
@@ -96,6 +84,7 @@ export default function LoginModal() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="비밀번호"
+                autoFocus
                 className="w-full px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-12"
                 required
               />
